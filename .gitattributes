@@ -1,0 +1,2 @@
+# Shell scripts must stay LF or they fail in Linux containers with "bad interpreter: ^M"
+*.sh text eol=lf

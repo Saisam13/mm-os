@@ -639,7 +639,16 @@ def _ensure_grant(db: OrmSession, user: User, slug: str, key: str, *, granted_by
     """Idempotent: does nothing if this user already has ANY grant on this service --
     models.py's uq_grant_user_service allows only one role per user per service, and a
     re-run must never crash on that, nor silently change a role a demo presenter may have
-    hand-adjusted in between runs."""
+    hand-adjusted in between runs.
+
+    Flushes immediately after adding: app/db.py's SessionLocal is `autoflush=False`, and
+    two different ROLE_GRANTS entries can resolve to the same (service, "viewer") pair for
+    one person once `None` is filled in with their department hint (e.g. the approver's
+    explicit purchase/viewer entry colliding with a department hint that also points at
+    purchase) -- without an explicit flush, the second call's "does this already exist"
+    check would not see the first call's still-pending insert, and both would hit
+    uq_grant_user_service together at commit time instead of the second one being skipped.
+    """
     service = db.scalar(select(Service).where(Service.slug == slug))
     if service is None:
         raise RuntimeError(f"service {slug!r} not found -- run seed_services() first")
@@ -650,6 +659,7 @@ def _ensure_grant(db: OrmSession, user: User, slug: str, key: str, *, granted_by
     if role is None:
         raise RuntimeError(f"service role {slug}/{key} not found -- run seed_services() first")
     db.add(Grant(user_id=user.id, service_id=service.id, service_role_id=role.id, granted_by=granted_by, reason=reason))
+    db.flush()
 
 
 def apply_demo_logins_and_grants(
