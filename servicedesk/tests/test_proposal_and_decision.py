@@ -2,8 +2,8 @@
 approval real."""
 from tests.conftest import auth, token_for
 
-AGENT = auth(token_for("supervisor", roles=["agent"]))
-HOD_APPROVES = auth(token_for("hod"))
+AGENT = auth(token_for("MM05", roles=["agent"]))
+MANAGER_APPROVES = auth(token_for("MM81"))
 
 
 def _to_it_review(client, ticket_id):
@@ -14,9 +14,32 @@ def _submit(client):
     r = client.post(
         "/api/tickets",
         json={"kind": "automation", "title": "Nightly DPR watch", "body": "Flag variance beyond 5%"},
-        headers=auth(token_for("operator")),
+        headers=auth(token_for("MM88")),
     )
     return r.json()
+
+
+def test_proposal_on_a_still_submitted_ticket_is_rejected_not_silently_stored(client):
+    """Defect fix: creating a proposal while a ticket is still `submitted` (nobody has
+    triaged it into `it_review` yet) used to be accepted and stored with no state change at
+    all — the requester's ticket stayed `submitted` and the agent saw nothing happen.
+    Rejecting with a 409 naming the required state is clearer than silently advancing past
+    the triage step, and it means no orphaned proposal ever attaches to a ticket nobody
+    agreed was ready for one."""
+    ticket = _submit(client)
+    assert ticket["status"] == "submitted"
+
+    r = client.post(
+        f"/api/tickets/{ticket['id']}/proposals",
+        json={"scope_summary": "Nightly job", "effort_days": 4, "resources": {}, "alternatives": "A saved report"},
+        headers=AGENT,
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == {"error": "wrong_status", "required": "it_review", "current": "submitted"}
+
+    detail = client.get(f"/api/tickets/{ticket['id']}", headers=AGENT).json()
+    assert detail["status"] == "submitted"  # unchanged — no silent advance
+    assert client.get(f"/api/tickets/{ticket['id']}/proposals", headers=AGENT).json() == []  # nothing stored
 
 
 def test_proposal_without_alternatives_is_rejected(client):
@@ -58,13 +81,17 @@ def test_snapshot_immutable_across_later_proposal_revision(client):
     ticket = _submit(client)
     _to_manager_review(client, ticket["id"])
 
-    r = client.post(f"/api/tickets/{ticket['id']}/decisions", json={"decision": "approved"}, headers=HOD_APPROVES)
+    r = client.post(
+        f"/api/tickets/{ticket['id']}/decisions", json={"decision": "changes_requested"}, headers=MANAGER_APPROVES,
+    )
     assert r.status_code == 201, r.text
     decision = r.json()
     assert decision["snapshot"]["effort_days"] == 4.0
     assert decision["snapshot"]["version"] == 1
 
-    # IT later revises the proposal (v2) — the earlier decision's snapshot must not move.
+    # IT revises the proposal (v2) after the changes-requested loop-back to it_review — the
+    # earlier decision's snapshot must not move.
+    client.post(f"/api/tickets/{ticket['id']}/transition", json={"to_status": "it_review"}, headers=AGENT)
     client.post(
         f"/api/tickets/{ticket['id']}/proposals",
         json={"scope_summary": "Nightly job, wider scope", "effort_days": 9, "resources": {}, "alternatives": "None now"},
@@ -88,7 +115,7 @@ def test_requester_cannot_decide_even_if_somehow_the_approver_sub(client, db):
 
     r = client.post(
         f"/api/tickets/{ticket['id']}/decisions", json={"decision": "approved"},
-        headers=auth(token_for("operator")),
+        headers=auth(token_for("MM88")),
     )
     assert r.status_code == 403
     assert r.json()["detail"]["error"] == "cannot_approve_own_request"
@@ -99,7 +126,7 @@ def test_only_computed_approver_may_decide(client):
     _to_manager_review(client, ticket["id"])
     r = client.post(
         f"/api/tickets/{ticket['id']}/decisions", json={"decision": "approved"},
-        headers=auth(token_for("apex")),  # not this ticket's computed approver (HOD is)
+        headers=auth(token_for("MM33")),  # not this ticket's computed approver (MM81 is)
     )
     assert r.status_code == 403
     assert r.json()["detail"]["error"] == "not_the_approver"

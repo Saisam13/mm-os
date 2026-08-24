@@ -52,7 +52,7 @@ def test_upsert_replaces_rather_than_duplicates(client, db):
     dept = Department(name="P-Spoke")
     db.add(dept)
     db.commit()
-    admin_tok = token_for("hod", roles=["admin"])
+    admin_tok = token_for("MM-ITADMIN", roles=["admin"])
 
     r1 = client.put("/api/admin/sla", json={
         "department_id": str(dept.id), "priority": "high",
@@ -71,3 +71,41 @@ def test_upsert_replaces_rather_than_duplicates(client, db):
     matching = [row for row in rows if row["department_id"] == str(dept.id) and row["priority"] == "high"]
     assert len(matching) == 1, "upsert must replace the existing row, not add a second one"
     assert matching[0]["response_time_minutes"] == 30
+
+
+def test_seed_populates_real_departments_with_every_real_priority(db):
+    """The SLA tab used to render an empty table on a fresh install — nothing seeded any
+    `Department` or `SlaConfig` rows. `ensure_default_sla_config` (app/seed.py) fixes that,
+    and must use ticket priorities a ticket can actually have (`low`/`normal`/`high`/
+    `urgent` — `models.TICKET_PRIORITIES`), not MiniHelp's original `low/medium/high/
+    critical`, which would never match a real ticket's `priority` column."""
+    from app.models import TICKET_PRIORITIES
+    from app.seed import REAL_DEPARTMENTS, ensure_default_sla_config
+
+    assert db.query(Department).count() == 0
+    assert db.query(SlaConfig).count() == 0
+
+    ensure_default_sla_config()
+
+    depts = {d.name: d for d in db.query(Department).all()}
+    assert set(REAL_DEPARTMENTS) <= set(depts)
+
+    configs = db.query(SlaConfig).all()
+    assert len(configs) == len(REAL_DEPARTMENTS) * len(TICKET_PRIORITIES)
+    seen_priorities = {c.priority for c in configs}
+    assert seen_priorities == set(TICKET_PRIORITIES)
+    for cfg in configs:
+        assert cfg.response_time_minutes > 0
+        assert cfg.resolution_time_minutes > 0
+
+    # Idempotent: calling it again (e.g. every app startup) must not duplicate rows, and
+    # must not clobber an admin's later edit to one of them.
+    one = db.query(SlaConfig).filter(SlaConfig.priority == "urgent").first()
+    one.response_time_minutes = 999
+    db.commit()
+
+    ensure_default_sla_config()
+    assert db.query(Department).count() == len(REAL_DEPARTMENTS)
+    assert db.query(SlaConfig).count() == len(REAL_DEPARTMENTS) * len(TICKET_PRIORITIES)
+    refreshed = db.get(SlaConfig, one.id)
+    assert refreshed.response_time_minutes == 999

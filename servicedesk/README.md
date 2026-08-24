@@ -81,7 +81,7 @@ cd servicedesk
 ../backend/.venv/Scripts/python.exe -m pytest -q
 ```
 
-31 tests, all passing, on SQLite. `tests/conftest.py` is this service's own harness — not
+52 tests, all passing, on SQLite. `tests/conftest.py` is this service's own harness — not
 shared with `backend/tests/conftest.py`, which is MM OS's and frozen.
 
 ## State machines
