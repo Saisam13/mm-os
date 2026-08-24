@@ -17,7 +17,7 @@ from .db import db_healthy, engine
 from .mmos_seam import get_real_mmos
 from .models import Base
 from .routers import admin, comments, decisions, mmos, proposals, tickets
-from .seed import ensure_default_approval_routing
+from .seed import ensure_default_approval_routing, ensure_default_sla_config
 
 cfg = settings()
 
@@ -29,6 +29,10 @@ Base.metadata.create_all(bind=engine)
 # Approval Routing must never start out empty — see app/seed.py's docstring. No-op outside
 # ORG_CHART_MODE=seed.
 ensure_default_approval_routing()
+
+# Nor should the SLA tab — see app/seed.py's ensure_default_sla_config docstring. Runs in
+# every mode; idempotent.
+ensure_default_sla_config()
 
 
 async def _heartbeat_loop() -> None:  # pragma: no cover - no live MM OS in this sandbox

@@ -90,31 +90,51 @@ class SeedOrgChartClient:
         return chain
 
 
-# A minimal fixture org, shaped like the real one (docs/01, P-Spoke department):
-# operator -> supervisor -> HOD -> Apex. Shared by default_seed() (below), the manual-testing
-# dev-token endpoint (app/routers/mmos.py), and tests/conftest.py, so all three agree on who
-# the seeded people are without three copies of the same data drifting apart. Not demo data
-# beyond what the acceptance tests and manual verification need.
+# Real MiniMines employees, taken verbatim from backend/app/demo_seed.py (the fixture of the
+# 23 real people MM OS is seeded with) — replaces the four invented "operator/supervisor/
+# hod/apex" personas that used to live here, so a demo shows the same person in Service Desk
+# and in MM OS for the same action. Keyed by employee code, not job label, so
+# `POST /_dev/token {"persona": "MM88"}` mints a token for the same person MM OS knows as
+# MM88. Shared by default_seed() (below), the manual-testing dev-token endpoint
+# (app/routers/mmos.py), and tests/conftest.py, so all three agree on who the seeded people
+# are without three copies of the same data drifting apart.
+#
+# Emails are deliberately `None` for every real employee: demo_seed.py excludes them on
+# purpose (49 of 73 real "work emails" are personal gmail addresses that must never enter
+# git or an internet-facing box) — PIN/dev-token login needs none. `MM-ITADMIN` is the one
+# exception: it is a role address (`itadmin@m-mines.com`), not a person, seeded the same way
+# `seed_platform_admin()` always has.
+#
+# Manager chain, honestly reflecting what the spreadsheet actually resolved: MM88's manager
+# is MM81 (real). MM81, MM05 and MM33 have no manager in the fixture — rather than inventing
+# one, `app/routing.py`'s fallback to the single configured `ApprovalDefault` (seeded to
+# MM-ITADMIN below, see `ensure_default_approval_routing`) is what keeps every persona able
+# to reach an approver, so a demo never dead-ends on `NoApproverFound`.
 SEED_PERSONAS = {
-    "operator": dict(sub="user:op-1", employee_code="MM19", full_name="P-Spoke Operator",
-                      department="P-Spoke", division="Production", band="NON L",
-                      approval_level="Operational", is_approver=False, email=None),
-    "supervisor": dict(sub="user:sup-1", employee_code="MM05", full_name="P-Spoke Supervisor",
-                        department="P-Spoke", division="Production", band="L2",
-                        approval_level="Operational", is_approver=False, email="supervisor@m-mines.com"),
-    "hod": dict(sub="user:hod-1", employee_code="MM02", full_name="P-Spoke HOD",
-                department="P-Spoke", division="Production", band="L3",
-                approval_level="L3 (HOD)", is_approver=False, email="hod@m-mines.com"),
-    "apex": dict(sub="user:apex-1", employee_code="MM01", full_name="Apex Approver",
-                 department="Corporate", division="Corporate", band="L5",
-                 approval_level="L5 (Apex)", is_approver=False, email="apex@m-mines.com"),
+    "MM88": dict(sub="user:MM88", employee_code="MM88", full_name="MAMATESH UDAY NAIK",
+                 department="Projects", division="Projects", band="L2",
+                 approval_level="L1 (Associate)", is_approver=False, email=None),
+    "MM81": dict(sub="user:MM81", employee_code="MM81", full_name="Chandrashekhar Keshav Kalvit",
+                 department="Projects", division="Corporate", band="L4",
+                 approval_level="L4 (Div Head)", is_approver=False, email=None),
+    "MM05": dict(sub="user:MM05", employee_code="MM05", full_name="Mandaleshvar Sharma",
+                 department="P-Spoke", division="Production", band="L4",
+                 approval_level="L3 (HOD)", is_approver=False, email=None),
+    "MM33": dict(sub="user:MM33", employee_code="MM33", full_name="Hardhik Pendurthi",
+                 department="StratOps", division="Corporate", band="NON L",
+                 approval_level="Oversight", is_approver=False, email=None),
+    "MM-ITADMIN": dict(sub="user:MM-ITADMIN", employee_code="MM-ITADMIN", full_name="IT Administrator",
+                        department="Information Technology", division="Corporate", band="L3",
+                        approval_level=None, is_approver=True, email="itadmin@m-mines.com"),
 }
-SEED_MANAGER_OF = {"operator": "supervisor", "supervisor": "hod", "hod": "apex", "apex": None}
+SEED_MANAGER_OF = {"MM88": "MM81", "MM81": None, "MM05": None, "MM33": None, "MM-ITADMIN": None}
 
 
 def default_seed() -> SeedOrgChartClient:
-    """The `OrgChartClient` fixture built from `SEED_PERSONAS`. An HOD who raises their own
-    request must escalate past themselves to Apex — see test_approver.py."""
+    """The `OrgChartClient` fixture built from `SEED_PERSONAS`. MM81, who has no manager in
+    the fixture, escalates past themselves (self-approval is never allowed) straight to
+    `NoApproverFound` — `app/routing.py` is what catches that and falls back to the
+    configured `ApprovalDefault` — see test_approver.py."""
     node_fields = {"sub", "employee_code", "full_name", "department", "approval_level", "is_approver", "email"}
     people: dict[str, PersonNode] = {}
     for key, data in SEED_PERSONAS.items():

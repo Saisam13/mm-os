@@ -2,6 +2,15 @@
 always adds a new version and never edits a prior row (decisions.snapshot depends on that
 immutability). Creating the *first* proposal on a ticket still in `it_review` is also what
 carries the ticket to `proposal_ready` — the only door from `it_review` to `manager_review`.
+
+A proposal only makes sense once a ticket has actually entered `it_review` (an agent has
+picked it up out of the raw `submitted` queue) — creating one against a `submitted` ticket
+used to be silently accepted and stored with no state change at all, leaving the requester's
+ticket stuck at `submitted` and the agent seeing nothing happen. Fixed by rejecting with a
+409 naming the required state, rather than silently advancing past the triage step or
+leaving a proposal attached to a ticket nobody agreed was ready for one: a ticket can also be
+in `it_review` after a `changes_requested` loop-back, so this same check also covers a
+revised (v2+) proposal, not just the first.
 """
 from __future__ import annotations
 
@@ -33,6 +42,11 @@ def create_proposal(
         raise HTTPException(status_code=404, detail={"error": "not_found"})
     if ticket.kind != "automation":
         raise HTTPException(status_code=409, detail={"error": "not_an_automation_request"})
+    if ticket.status != "it_review":
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "wrong_status", "required": "it_review", "current": ticket.status},
+        )
 
     next_version = (
         db.execute(select(func.max(Proposal.version)).where(Proposal.ticket_id == ticket.id)).scalar_one()
