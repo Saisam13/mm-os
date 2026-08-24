@@ -1,0 +1,11 @@
+# Service Desk's own service. Kept to what backend/.venv already has installed (rule #7 in
+# the sprint amendments) — no new dependency needed a compiler or a fresh pip resolve.
+fastapi==0.141.1
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+alembic==1.14.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-jose[cryptography]==3.5.0
+httpx==0.28.1

@@ -1,0 +1,259 @@
+<title>MM OS One Pager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+
+<style>
+/* Single A4 page. Print-first: light ground, navy band, petrol structure,
+   orange for attention only. Roboto + Roboto Condensed. See brand/BRAND.md. */
+:root {
+  --petrol:#005D7F; --petrol-100:#DFEDF3;
+  --navy:#002060; --orange:#C24F00; --orange-100:#FFEDE0;
+  --cyan:#1BA4BE;
+  --surface:#FFFFFF; --surface-2:#F0F4FA;
+  --border:#C4CFDC; --border-soft:#DDE4EE;
+  --text:#0E1B26; --text-2:#3C4C5C; --text-3:#65737F;
+  --f:'Roboto','Segoe UI',system-ui,sans-serif;
+  --fc:'Roboto Condensed','Roboto',sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #fff; }
+body {
+  color: var(--text); font-family: var(--f); font-size: 8.3pt; line-height: 1.42;
+  -webkit-font-smoothing: antialiased;
+}
+.sheet { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 0; background: #fff; }
+h1,h2,h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
+p { margin: 0; }
+.fc { font-family: var(--fc); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* band */
+.band { background: var(--navy); border-bottom: 2.5pt solid var(--petrol); padding: 4mm 10mm 3mm; }
+.band-top { display: flex; align-items: center; justify-content: space-between; gap: 8mm; }
+.lock { display: flex; align-items: center; gap: 3mm; }
+.lock-t { font-family: var(--fc); font-weight: 700; line-height: .9; color: #fff; font-size: 10.5pt; }
+.lock-t span { display: block; }
+.lock-t .tag { font-family: var(--f); font-weight: 400; font-size: 4.6pt; letter-spacing: .17em; text-transform: uppercase; color: #7E93A2; margin-top: 1.1mm; }
+.stamp { font-family: var(--fc); font-size: 7pt; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #4FB8D6; text-align: right; }
+.band h1 { color: #fff; font-size: 13.5pt; line-height: 1.12; margin: 3mm 0 0; max-width: 34ch; }
+.band p { color: #A7BAC3; font-size: 7.6pt; margin: 1.6mm 0 0; max-width: 92ch; }
+.meta { display: flex; flex-wrap: wrap; gap: .6mm 5mm; margin-top: 2.6mm; font-family: var(--fc); font-size: 7.2pt; letter-spacing: .07em; text-transform: uppercase; color: #7E93A2; }
+.meta b { color: #C4D3DD; }
+
+.pad { padding: 3.4mm 10mm 2.5mm; }
+.eyebrow { font-family: var(--fc); font-size: 6.8pt; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--petrol); margin-bottom: 1.4mm; }
+h2 { font-size: 10.5pt; margin-bottom: 1.6mm; }
+
+.two { display: grid; grid-template-columns: 103mm 1fr; gap: 6mm; align-items: start; }
+figure { margin: 0; }
+figure svg { display: block; width: 100%; height: auto; }
+figcaption { font-size: 6.6pt; color: var(--text-3); margin-top: 1.2mm; line-height: 1.35; }
+
+.steps { counter-reset: s; }
+.step { display: grid; grid-template-columns: 4.4mm 1fr; gap: 1.8mm; margin-bottom: 1.3mm; }
+.step .n { font-family: var(--fc); font-weight: 700; font-size: 8pt; color: var(--petrol); }
+.step b { font-weight: 500; }
+.step span.d { color: var(--text-2); }
+
+.note { border-left: 2pt solid var(--orange); background: var(--orange-100); padding: 1.6mm 2.2mm; margin-top: 2.2mm; font-size: 7.1pt; line-height: 1.37; }
+.note b { color: var(--text); }
+
+table { width: 100%; border-collapse: collapse; font-size: 7.2pt; margin-top: .8mm; }
+th { text-align: left; font-family: var(--fc); font-size: 6.6pt; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); padding: 1.1mm 1.8mm; border-bottom: .6pt solid var(--border); }
+td { padding: 1.1mm 1.8mm; border-bottom: .5pt solid var(--border-soft); vertical-align: top; line-height: 1.36; }
+tbody tr:last-child td { border-bottom: none; }
+td strong { font-weight: 500; }
+.tw { border: .6pt solid var(--border); border-radius: 1.6mm; overflow: hidden; }
+
+.three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3.4mm; margin-top: 2.4mm; }
+.col h3 { font-size: 8pt; margin-bottom: 1.6mm; display: flex; align-items: center; gap: 1.6mm; }
+.tick { font-family: var(--fc); font-size: 6.4pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: .4mm 1.4mm; border-radius: .8mm; }
+.tick.in { background: var(--petrol-100); color: var(--petrol); }
+.tick.wait { background: var(--surface-2); color: var(--text-3); }
+.tick.risk { background: var(--orange-100); color: var(--orange); }
+.col ul { margin: 0; padding-left: 3.2mm; font-size: 7.1pt; line-height: 1.37; }
+.col li { margin-bottom: .6mm; }
+.col li::marker { color: var(--petrol); }
+
+.foot { margin-top: 2.4mm; padding-top: 1.8mm; border-top: .6pt solid var(--border); display: flex; justify-content: space-between; gap: 6mm; align-items: baseline; }
+.foot .open { font-size: 7.6pt; }
+.foot .open b { color: var(--orange); }
+.foot .src { font-family: var(--fc); font-size: 6.8pt; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); text-align: right; white-space: nowrap; }
+
+@page { size: A4; margin: 0; }
+@media print { .sheet { min-height: auto; } }
+</style>
+
+<div class="sheet">
+
+  <div class="band">
+    <div class="band-top">
+      <div class="lock">
+        <svg width="30" height="30" viewBox="0 0 34 34" aria-label="MiniMines">
+          <circle cx="11" cy="17" r="7.4" fill="none" stroke="#fff" stroke-width="2.6"/>
+          <path d="M7.6 17h6.8M11 13.6v6.8" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+          <circle cx="25" cy="17" r="7.4" fill="none" stroke="#fff" stroke-width="2.6"/>
+          <path d="M21.6 17h6.8" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+        </svg>
+        <span class="lock-t"><span>MINI</span><span>MINES</span><span class="tag">Extracting what matters</span></span>
+      </div>
+      <div class="stamp">MM OS<br>Blueprint · Aug 2026</div>
+    </div>
+    <h1>One sign-in in front of every company system.</h1>
+    <p>ERPNext, Item Code Studio, ATT Platform, Twenty CRM and everything built next — reached from one
+       place, with each person's access decided in one place instead of five.</p>
+    <div class="meta">
+      <span><b>74</b> employees</span><span><b>6</b> services at launch</span>
+      <span><b>10</b> weeks to v1</span><span><b>1</b> VPS, Coolify</span>
+      <span>VPN and office network only</span>
+    </div>
+  </div>
+
+  <div class="pad">
+    <div class="two">
+      <div>
+        <div class="eyebrow">How it works</div>
+        <figure>
+          <svg viewBox="0 0 420 250" role="img" aria-label="Google Workspace verifies the person. MM OS holds employees, services and grants, and issues a fifteen-minute token good for one service. In-house services verify it without calling MM OS and check every sixty seconds for removed access. ERPNext signs in against the same Google accounts without a token.">
+            <defs>
+              <marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3C4C5C"/></marker>
+              <marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#005D7F"/></marker>
+            </defs>
+            <g fill="none" stroke="#8C9AA8" stroke-width=".9">
+              <rect x="1" y="8" width="104" height="26" rx="3"/>
+              <rect x="270" y="8" width="149" height="26" rx="3"/>
+              <rect x="1" y="196" width="98" height="46" rx="3"/>
+              <rect x="110" y="196" width="98" height="46" rx="3"/>
+              <rect x="219" y="196" width="98" height="46" rx="3"/>
+              <rect x="328" y="196" width="91" height="46" rx="3" stroke-dasharray="3 2"/>
+            </g>
+            <rect x="70" y="68" width="280" height="94" rx="4" fill="none" stroke="#005D7F" stroke-width="1.5"/>
+
+            <g font-family="Roboto, sans-serif" fill="#0E1B26">
+              <text x="53" y="25" font-size="8.5" font-weight="500" text-anchor="middle">Employee browser</text>
+              <text x="344" y="20" font-size="8.5" font-weight="500" text-anchor="middle">Google Workspace</text>
+              <text x="344" y="30" font-size="7" text-anchor="middle" fill="#65737F" font-family="Roboto Condensed, sans-serif">MFA · m-mines.com only</text>
+
+              <text x="84" y="85" font-size="9.5" font-weight="700" fill="#005D7F">MM OS — control plane</text>
+              <text x="84" y="101" font-size="7.6" font-family="Roboto Condensed, sans-serif">employees · services · who may open what</text>
+              <text x="84" y="115" font-size="7.6" font-family="Roboto Condensed, sans-serif">issues the token · publishes removed access</text>
+              <text x="84" y="129" font-size="7.6" font-family="Roboto Condensed, sans-serif">the shared bar, on every service</text>
+              <text x="84" y="143" font-size="7.6" font-family="Roboto Condensed, sans-serif">AI switchboard — holds no keys</text>
+
+              <text x="50" y="212" font-size="8" font-weight="500" text-anchor="middle">Item Code Studio</text>
+              <text x="50" y="222" font-size="6.8" text-anchor="middle" fill="#65737F">public lookup +</text>
+              <text x="50" y="230" font-size="6.8" text-anchor="middle" fill="#65737F">admin console</text>
+              <text x="159" y="212" font-size="8" font-weight="500" text-anchor="middle">ATT Platform</text>
+              <text x="159" y="222" font-size="6.8" text-anchor="middle" fill="#65737F">portfolio scoring</text>
+              <text x="268" y="212" font-size="8" font-weight="500" text-anchor="middle">Service Desk</text>
+              <text x="268" y="222" font-size="6.8" text-anchor="middle" fill="#65737F">tickets + automation</text>
+              <text x="373" y="212" font-size="8" font-weight="500" text-anchor="middle">ERPNext</text>
+              <text x="373" y="222" font-size="6.8" text-anchor="middle" fill="#65737F">Frappe Cloud —</text>
+              <text x="373" y="230" font-size="6.8" text-anchor="middle" fill="#65737F">not ours to gate</text>
+              <text x="50" y="192" font-size="6.4" text-anchor="middle" fill="#8C9AA8" font-family="Roboto Condensed, sans-serif">OWN DATABASE</text>
+              <text x="159" y="192" font-size="6.4" text-anchor="middle" fill="#8C9AA8" font-family="Roboto Condensed, sans-serif">OWN DATABASE</text>
+              <text x="268" y="192" font-size="6.4" text-anchor="middle" fill="#8C9AA8" font-family="Roboto Condensed, sans-serif">OWN DATABASE</text>
+            </g>
+
+            <g stroke="#3C4C5C" stroke-width=".9" fill="none">
+              <line x1="105" y1="21" x2="264" y2="21" marker-end="url(#m1)"/>
+              <polyline points="344,34 344,50 290,50 290,68" marker-end="url(#m1)"/>
+              <polyline points="53,34 53,96 70,96" marker-end="url(#m1)"/>
+              <polyline points="300,196 300,178 250,178 250,162" marker-end="url(#m1)" stroke-dasharray="3.5 2.5"/>
+              <polyline points="400,34 400,196" marker-end="url(#m1)" stroke-dasharray="2.5 2"/>
+            </g>
+            <g font-family="Roboto, sans-serif" font-size="7" fill="#3C4C5C">
+              <text x="184" y="16" text-anchor="middle">1 · sign in, MFA</text>
+              <text x="317" y="46" text-anchor="middle">2 · identity verified</text>
+              <text x="57" y="60">3 · session</text>
+              <text x="306" y="176">removed access · every 60s</text>
+              <text x="405" y="115" transform="rotate(90 405 115)" text-anchor="middle">same Google login, no token</text>
+            </g>
+
+            <g stroke="#005D7F" stroke-width="1.5" fill="none">
+              <polyline points="150,162 150,178 50,178 50,196" marker-end="url(#m2)"/>
+              <polyline points="150,178 159,178 159,196" marker-end="url(#m2)"/>
+              <polyline points="159,178 268,178 268,196" marker-end="url(#m2)"/>
+            </g>
+            <text x="66" y="172" font-size="7.4" font-weight="700" fill="#005D7F" font-family="Roboto, sans-serif">4 · token for one service, 15 minutes</text>
+          </svg>
+          <figcaption>
+            The petrol arrows are the mechanism. A token is good for <em>one</em> service for fifteen
+            minutes, and work traffic never passes through MM OS — so if the control plane restarts,
+            nobody inside a service is thrown out. ERPNext is hosted software and owns its own
+            session, so it signs in against the same Google accounts without a token.
+          </figcaption>
+        </figure>
+      </div>
+
+      <div>
+        <div class="eyebrow">What people get</div>
+        <div class="steps">
+          <div class="step"><span class="n">01</span><span><b>One page to get in.</b> <span class="d">Logo, sign in with Google or an employee code and PIN, and every service listed underneath. Click one and it opens.</span></span></div>
+          <div class="step"><span class="n">02</span><span><b>Only what you may open.</b> <span class="d">The list shows your role on each service. Access is one row per person, per service, per role — nothing more elaborate.</span></span></div>
+          <div class="step"><span class="n">03</span><span><b>Always one click back.</b> <span class="d">A slim bar on every service: back to MM OS, a searchable switcher, your open requests, your role right here.</span></span></div>
+          <div class="step"><span class="n">04</span><span><b>Requests that end in something built.</b> <span class="d">Anyone can request an automation. IT replies with scope, days, resources and the cheaper alternative. The department head approves the cost.</span></span></div>
+        </div>
+        <div class="note">
+          <b>The alternative field is mandatory in every proposal.</b> It is the cheapest way to stop
+          a department commissioning a service that a saved report would have solved, and it turns
+          the manager's approval into a real choice rather than a signature.
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:3.6mm">
+      <div class="eyebrow">Decisions</div>
+      <div class="tw"><table>
+        <thead><tr><th style="width:23%">Question</th><th style="width:29%">Decision</th><th style="width:26%">Why</th><th style="width:22%">What it costs</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Who verifies people</strong></td><td>Google Workspace, locked to m-mines.com, MFA enforced</td><td>No extra password, and offboarding is one click that closes every service</td><td>Staff without mailboxes need a code-and-PIN fallback</td></tr>
+          <tr><td><strong>Who decides access</strong></td><td>MM OS, as the master</td><td>Google has no idea what Item Code Studio is</td><td>MM OS and ERPNext both hold employee records, so they can drift</td></tr>
+          <tr><td><strong>How services trust us</strong></td><td>Signed 15-minute token, checked without calling us, plus a 60-second removed-access list</td><td>No call to MM OS on every request, so it is never a single point of failure</td><td>Removing access takes up to 60 seconds, not instantly</td></tr>
+          <tr><td><strong>AI keys</strong></td><td>Stay inside each service. MM OS sees usage and holds the off switch</td><td>No central bundle of keys to leak, cost still visible in one place</td><td>Usage is only as accurate as services report it</td></tr>
+          <tr><td><strong>Who can reach it</strong></td><td>Office network and company VPN only</td><td>A stolen password is useless without network access</td><td>Everyone needs a VPN profile, audited monthly</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="three">
+      <div class="col">
+        <h3><span class="tick in">In v1</span></h3>
+        <ul>
+          <li>Google sign-in, plus code and PIN for shop-floor staff</li>
+          <li>All 74 employees imported from the existing sheet</li>
+          <li>Access admin: who holds what, what each role permits, expiry, history, requests decided in place</li>
+          <li>ATT and Item Code Studio moved across, old PIN gates deleted</li>
+          <li>Service Desk: my requests, department queue, IT console, approvals</li>
+          <li>AI usage with a per-service off switch, and a record of who granted what</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3><span class="tick wait">Waiting for v2</span></h3>
+        <ul>
+          <li>Unified mail inbox inside MM OS</li>
+          <li>Search across every service at once</li>
+          <li>Response targets and escalation on requests</li>
+          <li>AI cost dashboards and budgets</li>
+          <li>Drift report against ERPNext employee records</li>
+        </ul>
+        <p style="font-size:7pt;color:var(--text-3);margin-top:1.6mm;line-height:1.35">The inbox and email intake wait together on purpose, so they are designed once.</p>
+      </div>
+      <div class="col">
+        <h3><span class="tick risk">Carried on purpose</span></h3>
+        <ul>
+          <li><strong>60-second gap</strong> on removing access — sessions end at once and Google closes sign-in entirely</li>
+          <li><strong>Item Code Studio serves public and admin from one app</strong> — three structural locks, the last being a database account with no write permission</li>
+          <li><strong>Service names visible before sign-in</strong> — accepted; nothing is on the public internet and that page carries names only</li>
+          <li><strong>A private network is friction</strong> — the real adoption risk, answered with usability not policy</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="open"><b>Open item:</b> three console directions are built and waiting on a choice — a left rail with dense rows, a top navigation with a calmer layout, or a command-driven console with almost no chrome. Everything else here is settled.</div>
+      <div class="src">Detail · docs/01–09<br>Brand · brand/BRAND.md<br>Prototype · demo/console-directions.html</div>
+    </div>
+  </div>
+</div>

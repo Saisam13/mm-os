@@ -1,0 +1,572 @@
+<title>MM OS Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+
+<style>
+/* MiniMines brand — petrol #005D7F leads (logo ink), navy #002060 grounds the chrome,
+   orange #FF6A00 is action and attention only, cyan #1BA4BE supports.
+   Type: Roboto + Roboto Condensed. See brand/BRAND.md. */
+:root {
+  --petrol:      #005D7F;
+  --petrol-700:  #004962;
+  --petrol-100:  #DFEDF3;
+  --navy:        #002060;
+  --navy-900:    #082836;
+  --orange:      #FF6A00;
+  --orange-100:  #FFEDE0;
+  --cyan:        #1BA4BE;
+  --cyan-100:    #E1F3F7;
+
+  --ground:      #F0F4FA;
+  --surface:     #FFFFFF;
+  --surface-2:   #E9EDF5;
+  --border:      #D2DBE6;
+  --border-soft: #E6EAF2;
+  --text:        #0E1B26;
+  --text-2:      #48596A;
+  --text-3:      #7A8996;
+
+  --f:  'Roboto', 'Segoe UI', system-ui, sans-serif;
+  --fc: 'Roboto Condensed', 'Roboto', 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --petrol:#4FB8D6; --petrol-700:#7FCFE6; --petrol-100:#0D303D;
+    --navy:#03121C; --navy-900:#061A22;
+    --orange:#FF8B3D; --orange-100:#3B2214;
+    --cyan:#5FCBE0; --cyan-100:#0E3038;
+    --ground:#061A22; --surface:#0D2731; --surface-2:#143440;
+    --border:#1F4453; --border-soft:#163540;
+    --text:#E6EFF3; --text-2:#A7BAC3; --text-3:#7B909B;
+  }
+}
+:root[data-theme="dark"] {
+  --petrol:#4FB8D6; --petrol-700:#7FCFE6; --petrol-100:#0D303D;
+  --navy:#03121C; --navy-900:#061A22;
+  --orange:#FF8B3D; --orange-100:#3B2214;
+  --cyan:#5FCBE0; --cyan-100:#0E3038;
+  --ground:#061A22; --surface:#0D2731; --surface-2:#143440;
+  --border:#1F4453; --border-soft:#163540;
+  --text:#E6EFF3; --text-2:#A7BAC3; --text-3:#7B909B;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--ground); color: var(--text);
+  font-family: var(--f); font-size: 15px; line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 900px; margin: 0 auto; padding: 0 26px 80px; }
+h1,h2,h3 { margin: 0; font-weight: 700; letter-spacing: -.012em; text-wrap: balance; }
+p { margin: 0 0 14px; max-width: 68ch; }
+.mono { font-family: var(--fc); font-size: .95em; letter-spacing: .01em; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ── masthead ─────────────────────────────────────────────────────── */
+header { background: var(--navy); border-bottom: 3px solid var(--petrol); }
+.head-in { max-width: 900px; margin: 0 auto; padding: 34px 26px 36px; }
+.lock { display: flex; align-items: center; gap: 11px; margin-bottom: 30px; }
+.lock-t { font-family: var(--fc); font-weight: 700; line-height: .9; color: #fff; font-size: 21px; }
+.lock-t span { display: block; }
+.lock-t .tag {
+  font-family: var(--f); font-weight: 400; font-size: 7.5px; letter-spacing: .17em;
+  text-transform: uppercase; color: #6E8494; margin-top: 4px;
+}
+.kicker {
+  font-family: var(--fc); font-size: 11px; font-weight: 700; letter-spacing: .16em;
+  text-transform: uppercase; color: #4FB8D6; margin-bottom: 14px;
+}
+header h1 { font-size: clamp(27px, 4.6vw, 40px); line-height: 1.08; color: #fff; max-width: 27ch; }
+header p.lede { color: #A7BAC3; font-size: 16px; margin: 15px 0 0; max-width: 60ch; }
+.meta {
+  display: flex; flex-wrap: wrap; gap: 5px 24px; margin-top: 26px; padding-top: 19px;
+  border-top: 1px solid #143140; font-family: var(--fc); font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase; color: #6E8494;
+}
+.meta b { color: #C4D3DD; font-weight: 700; }
+
+/* ── sections ─────────────────────────────────────────────────────── */
+section { margin: 42px 0; }
+.eyebrow {
+  font-family: var(--fc); font-size: 11px; font-weight: 700; letter-spacing: .15em;
+  text-transform: uppercase; color: var(--petrol); margin-bottom: 8px;
+}
+h2 { font-size: 22px; margin-bottom: 11px; }
+h3 { font-size: 15.5px; margin: 22px 0 7px; }
+
+figure { margin: 26px 0; }
+figure svg { display: block; width: 100%; height: auto; }
+figcaption { font-size: 13px; color: var(--text-3); margin-top: 11px; max-width: 70ch; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 19px 21px; }
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); gap: 15px; }
+
+.tbl { overflow-x: auto; margin: 17px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th {
+  text-align: left; font-family: var(--fc); font-size: 10.5px; font-weight: 700;
+  letter-spacing: .11em; text-transform: uppercase; color: var(--text-3);
+  padding: 10px 14px; white-space: nowrap; border-bottom: 1px solid var(--border);
+}
+td { padding: 11px 14px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+tbody tr:last-child td { border-bottom: none; }
+
+ul, ol { margin: 0 0 14px; padding-left: 19px; max-width: 68ch; }
+li { margin-bottom: 5px; }
+li::marker { color: var(--petrol); }
+
+.pill {
+  display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 3px;
+  font-family: var(--fc); font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; background: var(--surface-2); color: var(--text-2);
+}
+.pill.in { background: var(--petrol-100); color: var(--petrol); }
+.pill.wait { background: var(--surface-2); color: var(--text-3); }
+.pill.act { background: var(--orange-100); color: var(--orange); }
+
+.note {
+  border-left: 3px solid var(--petrol); background: var(--petrol-100);
+  padding: 13px 15px; border-radius: 0 6px 6px 0; margin: 19px 0; font-size: 14px;
+}
+.note.act { border-left-color: var(--orange); background: var(--orange-100); }
+.note p:last-child { margin-bottom: 0; }
+
+.runs { display: grid; grid-template-columns: repeat(auto-fit, minmax(226px, 1fr)); gap: 14px; margin: 17px 0; }
+.run { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 15px 17px; }
+.run h3 { font-size: 14px; margin: 0 0 3px; }
+.run .who {
+  font-family: var(--fc); font-size: 11px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--petrol); margin-bottom: 9px;
+}
+.run ul { padding-left: 16px; margin: 0; font-size: 13.2px; }
+
+footer {
+  border-top: 1px solid var(--border); padding-top: 20px; margin-top: 8px;
+  font-family: var(--fc); font-size: 12px; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-3); display: flex; flex-wrap: wrap; gap: 7px 24px;
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ── print: force the light palette, keep blocks whole on paper ─────── */
+@media print {
+  :root {
+    --petrol:#005D7F; --petrol-700:#004962; --petrol-100:#DFEDF3;
+    --navy:#002060; --navy-900:#082836;
+    --orange:#C24F00; --orange-100:#FFEDE0; --cyan:#1BA4BE; --cyan-100:#E1F3F7;
+    --ground:#FFFFFF; --surface:#FFFFFF; --surface-2:#F0F4FA;
+    --border:#C4CFDC; --border-soft:#DDE4EE;
+    --text:#0E1B26; --text-2:#3C4C5C; --text-3:#65737F;
+  }
+  @page { size: A4; margin: 13mm 12mm; }
+  body { font-size: 10.4pt; line-height: 1.5; background: #fff; }
+  .wrap { max-width: none; padding: 0; }
+  header { break-inside: avoid; }
+  .head-in { max-width: none; padding: 16pt 0 18pt; }
+  header h1 { font-size: 21pt; }
+  header p.lede { font-size: 10.6pt; color: #C4D3DD; }
+  h2 { font-size: 14pt; }
+  h3 { font-size: 11pt; }
+  section { margin: 16pt 0; break-inside: avoid-page; }
+  figure, .card, .run, .note, .tbl, table tr { break-inside: avoid; }
+  thead { display: table-header-group; }
+  .tbl { overflow: visible; }
+  .split, .runs { gap: 9pt; }
+  figcaption { font-size: 8.6pt; }
+  footer { break-inside: avoid; padding-top: 10pt; }
+  a { text-decoration: none; color: inherit; }
+}
+</style>
+
+<header>
+  <div class="head-in">
+    <div class="lock">
+      <svg width="38" height="38" viewBox="0 0 34 34" aria-label="MiniMines">
+        <circle cx="11" cy="17" r="7.4" fill="none" stroke="#fff" stroke-width="2.5"/>
+        <path d="M7.6 17h6.8M11 13.6v6.8" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="25" cy="17" r="7.4" fill="none" stroke="#fff" stroke-width="2.5"/>
+        <path d="M21.6 17h6.8" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      <span class="lock-t"><span>MINI</span><span>MINES</span><span class="tag">Extracting what matters</span></span>
+    </div>
+    <div class="kicker">MM OS · Blueprint · August 2026</div>
+    <h1>One sign-in in front of every company system.</h1>
+    <p class="lede">
+      ERPNext, Item Code Studio, ATT Platform, Twenty CRM and everything built next — reached
+      from one place, with each person's access decided in one place instead of five, and a
+      built-in way to ask for what does not exist yet.
+    </p>
+    <div class="meta">
+      <span><b>74</b> employees</span>
+      <span><b>6</b> services at launch</span>
+      <span><b>10</b> weeks to v1</span>
+      <span><b>1</b> VPS, Coolify</span>
+      <span>VPN and office network only</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section>
+  <div class="eyebrow">The problem</div>
+  <h2>Five tools, five logins, and no single answer to who can do what</h2>
+  <p>
+    We keep building small services because they work — an item code generator, an analytics
+    hub, a template engine. Each arrives with its own address, its own login or none at all,
+    and its own idea of who is allowed in. Access lives in a spreadsheet, in someone's memory,
+    and in a shared PIN. There is no place an employee can see what they have, and no place IT
+    can go to change it.
+  </p>
+  <p>
+    MM OS fixes the layer underneath, not the tools. Every service keeps running as it does
+    now, in its own container with its own database. What changes is that they all learn who
+    you are from one source.
+  </p>
+</section>
+
+<section>
+  <div class="eyebrow">The constraint that shapes everything</div>
+  <h2>ERPNext is hosted software, so MM OS cannot own the traffic</h2>
+  <p>
+    ERPNext runs on Frappe Cloud. We do not control that server and cannot put our own
+    middleware in front of it. So MM OS is not a gateway everything flows through — it is an
+    <strong>identity, directory and workflow layer</strong>. It tells services who the visitor
+    is; the services keep serving their own traffic directly.
+  </p>
+  <p>
+    That is also what makes it durable. Replace ERPNext or the CRM in two years and MM OS does
+    not move.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 860 500" role="img" aria-label="Google Workspace authenticates the employee. MM OS issues a fifteen-minute token scoped to one service. In-house services verify it offline and poll MM OS for revoked access. ERPNext signs in against the same Google accounts without a token. Work traffic reaches services directly rather than through MM OS.">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--petrol)"/>
+        </marker>
+      </defs>
+
+      <g fill="none" stroke="currentColor" stroke-width="1.3" opacity=".8">
+        <rect x="42" y="22" width="184" height="46" rx="6"/>
+        <rect x="596" y="22" width="222" height="46" rx="6"/>
+        <rect x="42" y="372" width="170" height="94" rx="6"/>
+        <rect x="228" y="372" width="170" height="94" rx="6"/>
+        <rect x="414" y="372" width="170" height="94" rx="6"/>
+        <rect x="648" y="372" width="170" height="94" rx="6" stroke-dasharray="4 3"/>
+      </g>
+      <rect x="176" y="124" width="424" height="150" rx="7" fill="none" stroke="var(--petrol)" stroke-width="2"/>
+
+      <g fill="currentColor" font-family="Roboto, sans-serif">
+        <text x="134" y="50" font-size="13" font-weight="500" text-anchor="middle">Employee browser</text>
+        <text x="707" y="44" font-size="13" font-weight="500" text-anchor="middle">Google Workspace</text>
+        <text x="707" y="59" font-size="11" text-anchor="middle" opacity=".6" font-family="Roboto Condensed, sans-serif">MFA · m-mines.com only</text>
+
+        <text x="200" y="153" font-size="15" font-weight="700" fill="var(--petrol)">MM OS — control plane</text>
+        <text x="200" y="179" font-size="12" font-family="Roboto Condensed, sans-serif">employees · services · grants</text>
+        <text x="200" y="199" font-size="12" font-family="Roboto Condensed, sans-serif">public key, for offline verification</text>
+        <text x="200" y="219" font-size="12" font-family="Roboto Condensed, sans-serif">revoked-access list</text>
+        <text x="200" y="239" font-size="12" font-family="Roboto Condensed, sans-serif">the shared bar, on every service</text>
+        <text x="200" y="259" font-size="12" font-family="Roboto Condensed, sans-serif">AI switchboard — holds no keys</text>
+
+        <text x="127" y="400" font-size="12.5" font-weight="500" text-anchor="middle">Item Code Studio</text>
+        <text x="127" y="417" font-size="10.5" text-anchor="middle" opacity=".62">public lookup</text>
+        <text x="127" y="431" font-size="10.5" text-anchor="middle" opacity=".62">+ admin console</text>
+        <text x="127" y="452" font-size="10" text-anchor="middle" opacity=".5" font-family="Roboto Condensed, sans-serif">OWN DATABASE</text>
+
+        <text x="313" y="400" font-size="12.5" font-weight="500" text-anchor="middle">ATT Platform</text>
+        <text x="313" y="417" font-size="10.5" text-anchor="middle" opacity=".62">portfolio scoring</text>
+        <text x="313" y="452" font-size="10" text-anchor="middle" opacity=".5" font-family="Roboto Condensed, sans-serif">OWN DATABASE</text>
+
+        <text x="499" y="400" font-size="12.5" font-weight="500" text-anchor="middle">Service Desk</text>
+        <text x="499" y="417" font-size="10.5" text-anchor="middle" opacity=".62">tickets + automation</text>
+        <text x="499" y="431" font-size="10.5" text-anchor="middle" opacity=".62">requests</text>
+        <text x="499" y="452" font-size="10" text-anchor="middle" opacity=".5" font-family="Roboto Condensed, sans-serif">OWN DATABASE</text>
+
+        <text x="733" y="400" font-size="12.5" font-weight="500" text-anchor="middle">ERPNext</text>
+        <text x="733" y="417" font-size="10.5" text-anchor="middle" opacity=".62">Frappe Cloud — hosted</text>
+        <text x="733" y="431" font-size="10.5" text-anchor="middle" opacity=".62">not ours to gate</text>
+      </g>
+
+      <g stroke="currentColor" stroke-width="1.35" fill="none" color="currentColor">
+        <line x1="226" y1="45" x2="590" y2="45" marker-end="url(#a1)"/>
+        <polyline points="707,68 707,96 520,96 520,124" marker-end="url(#a1)"/>
+        <polyline points="134,68 134,168 176,168" marker-end="url(#a1)"/>
+      </g>
+      <g fill="currentColor" font-family="Roboto, sans-serif" font-size="11.5">
+        <text x="408" y="36" text-anchor="middle">1 · sign in, MFA</text>
+        <text x="613" y="88" text-anchor="middle">2 · identity verified</text>
+        <text x="146" y="112">3 · session</text>
+      </g>
+
+      <g stroke="var(--petrol)" stroke-width="2" fill="none" color="var(--petrol)">
+        <polyline points="290,274 290,322 127,322 127,372" marker-end="url(#a2)"/>
+        <polyline points="290,322 313,322 313,372" marker-end="url(#a2)"/>
+        <polyline points="313,322 499,322 499,372" marker-end="url(#a2)"/>
+        <polyline points="60,68 18,68 18,419 42,419" marker-end="url(#a2)"/>
+      </g>
+      <text x="300" y="312" font-size="12" font-weight="700" fill="var(--petrol)" font-family="Roboto, sans-serif">4 · token for one service, 15 minutes</text>
+      <text x="30" y="243" font-size="11" fill="var(--petrol)" font-family="Roboto, sans-serif" transform="rotate(-90 30 243)">work traffic goes direct — MM OS is not a proxy</text>
+
+      <g stroke="currentColor" stroke-width="1.25" fill="none" color="currentColor" stroke-dasharray="5 4">
+        <polyline points="560,372 560,296 480,296 480,274" marker-end="url(#a1)"/>
+      </g>
+      <g fill="currentColor" font-family="Roboto, sans-serif" font-size="11">
+        <text x="576" y="342">revoked access · every 60s</text>
+        <text x="576" y="357">AI usage report · every 5 min</text>
+      </g>
+
+      <g stroke="currentColor" stroke-width="1.25" fill="none" color="currentColor" stroke-dasharray="3 3">
+        <polyline points="790,68 790,372" marker-end="url(#a1)"/>
+      </g>
+      <text x="801" y="220" font-size="11" fill="currentColor" font-family="Roboto, sans-serif" transform="rotate(90 801 220)">same Google login, no token needed</text>
+    </svg>
+    <figcaption>
+      The arrows in petrol are the ones that matter. MM OS hands out a token good for
+      <em>one</em> service for fifteen minutes, and the actual work traffic never passes
+      through MM OS — so if the control plane restarts, nobody inside a service is thrown out.
+      Services check every 60 seconds for access that has been removed, and report their AI
+      consumption every five minutes. ERPNext signs in against the same Google accounts
+      without a token, because it owns its own session whatever we do.
+    </figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="eyebrow">Decisions</div>
+  <h2>What we chose, and what each choice costs</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Question</th><th>Decision</th><th>Why</th><th>What it costs</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Who verifies people</strong></td>
+          <td>Google Workspace, locked to <span class="mono">m-mines.com</span>, MFA enforced</td>
+          <td>Nobody manages another password, and offboarding is one click that closes every service at once</td>
+          <td>Staff without mailboxes need a code-and-PIN fallback</td>
+        </tr>
+        <tr>
+          <td><strong>Who decides access</strong></td>
+          <td>MM OS, as the master</td>
+          <td>Google has no idea what Item Code Studio is; access rules must live where the services are known</td>
+          <td>MM OS and ERPNext both hold employee records, so they can drift apart</td>
+        </tr>
+        <tr>
+          <td><strong>How services trust us</strong></td>
+          <td>A signed 15-minute token, checked without calling us, plus a 60-second revoked list</td>
+          <td>No network call on every request, so MM OS is never a single point of failure</td>
+          <td>Removing access takes up to 60 seconds rather than instantly</td>
+        </tr>
+        <tr>
+          <td><strong>Permission shape</strong></td>
+          <td>One row per person, per service, per role</td>
+          <td>Matches how the services actually work — Item Code Studio has viewers and admins, nothing more elaborate</td>
+          <td>Finer-grained rules stay inside each service</td>
+        </tr>
+        <tr>
+          <td><strong>Front page</strong></td>
+          <td>One page: logo, sign-in, and every service listed underneath</td>
+          <td>Anyone can see what exists and go straight to it; people who already have an account somewhere are not blocked</td>
+          <td>Service names are visible before signing in — accepted, since nothing is on the public internet</td>
+        </tr>
+        <tr>
+          <td><strong>Existing accounts</strong></td>
+          <td>ERPNext and Twenty keep their own sign-in; everything in-house goes through MM OS</td>
+          <td>Honest about what we control. Both routes use the same Google identity, so it is the same person either way</td>
+          <td>Two session owners to understand when something goes wrong</td>
+        </tr>
+        <tr>
+          <td><strong>Feeling like one system</strong></td>
+          <td>Services keep their own addresses; one shared bar sits on top of all of them</td>
+          <td>Nothing gets rewritten, and adding a service updates everyone's switcher with no redeployment</td>
+          <td>One script must be included in each service</td>
+        </tr>
+        <tr>
+          <td><strong>Support and requests</strong></td>
+          <td>A separate Service Desk application, wearing the MM OS shell</td>
+          <td>It serves every system including ERP and CRM, so it cannot live inside any one of them</td>
+          <td>One more service to run</td>
+        </tr>
+        <tr>
+          <td><strong>AI keys</strong></td>
+          <td>Stay inside each service. MM OS sees usage and holds the off switch</td>
+          <td>No central bundle of keys to leak, and cost is still visible in one place</td>
+          <td>Usage is only as accurate as what services report</td>
+        </tr>
+        <tr>
+          <td><strong>Who can reach it</strong></td>
+          <td>Office network and company VPN only</td>
+          <td>A stolen password is useless without network access; phishing and bot traffic stop mattering</td>
+          <td>Everyone needs a VPN profile, and the list must be audited monthly</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <p><strong>No separate identity server.</strong> A dedicated product like Keycloak earns
+    its place once two or more third-party applications demand it. Because our tokens use the
+    standard format, adding one later is configuration rather than a rebuild.</p>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Three things people will notice</div>
+  <h2>Getting in, getting back, and asking for what does not exist</h2>
+  <div class="split">
+    <div class="card">
+      <h3 style="margin-top:0">One page to get in</h3>
+      <p style="margin-bottom:0">
+        Logo, sign in with Google or an employee code and PIN, and every service listed
+        underneath. Click one and it opens — in-house tools sign you in through MM OS on the
+        way, ERPNext and Twenty use their own sign-in on the same Google account.
+      </p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Always one click back</h3>
+      <p style="margin-bottom:0">
+        A slim bar sits at the top of every service: back to MM OS, a searchable switcher
+        showing only what you can open, your open request count, and your role right here.
+        ERPNext gets the same back-link through its own navbar settings — a supported setting,
+        not a workaround.
+      </p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Requests that end in something built</h3>
+      <p style="margin-bottom:0">
+        Anyone can request an automation. IT replies with a real proposal — scope, days,
+        server and AI resources, and the cheaper alternative if one exists. The department
+        head approves the cost. Then it gets built and appears in the list.
+      </p>
+    </div>
+  </div>
+  <div class="note act">
+    <p><strong>The alternative field is mandatory in every proposal.</strong> It is the
+    cheapest way to stop a department commissioning a service that a saved report would have
+    solved, and it turns the manager's approval into a real choice rather than a signature.</p>
+  </div>
+  <p style="margin-top:18px">
+    The approver is worked out from the reporting line, never chosen by the requester, and what
+    was approved is frozen so later growth in scope is visible. Everyone in a department can
+    see the requests it raised and who is handling them; a request can be marked private, which
+    keeps its detail between the requester, whoever is handling it and the approver.
+  </p>
+</section>
+
+<section>
+  <div class="eyebrow">Version one</div>
+  <h2>What ships, and what deliberately waits</h2>
+  <div class="split">
+    <div class="card">
+      <h3 style="margin-top:0"><span class="pill in">In v1</span></h3>
+      <ul style="margin-bottom:0">
+        <li>Google sign-in, plus code and PIN for shop-floor staff</li>
+        <li>All 74 employees, imported from the existing sheet</li>
+        <li>One entry page listing every service, filtered to your access once you are in</li>
+        <li>Access administration: who holds what, what each role permits, expiry dates, full history, and access requests decided in place</li>
+        <li>The shared bar and switcher across every service</li>
+        <li>ATT Platform and Item Code Studio moved across, their old PIN gates deleted</li>
+        <li>Service Desk: my requests, the department queue, the IT console and approvals</li>
+        <li>AI usage view with a per-service off switch</li>
+        <li>A complete record of who granted what, to whom, when</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span class="pill wait">Waiting for v2</span></h3>
+      <ul style="margin-bottom:0">
+        <li>Unified mail inbox inside MM OS</li>
+        <li>Search across every service at once</li>
+        <li>Response-time targets and escalation on requests</li>
+        <li>Raising requests by email</li>
+        <li>AI cost dashboards and budgets</li>
+        <li>Drift report against ERPNext employee records</li>
+      </ul>
+      <p style="font-size:13px;color:var(--text-3);margin:13px 0 0">
+        The inbox and email intake wait together on purpose, so they are designed once. The
+        service registry built in v1 is what makes cross-service search possible later.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">How it gets built</div>
+  <h2>Nine agents, two runs</h2>
+  <p>
+    Every contract — the database, every endpoint, the token format, the integration rules —
+    is written before any feature code. That is what lets six agents build at the same time
+    without waiting on each other: none has to guess what another will produce, and no two
+    ever open the same file.
+  </p>
+  <div class="runs">
+    <div class="run">
+      <h3>Run one · six in parallel</h3>
+      <div class="who">A1 – A6</div>
+      <ul>
+        <li>Identity, people, spreadsheet import</li>
+        <li>Tokens, registry, AI switchboard</li>
+        <li>The console people actually see</li>
+        <li>The client library and shared bar</li>
+        <li>Service Desk, end to end</li>
+        <li>Deployment, VPN, backups, runbooks</li>
+      </ul>
+    </div>
+    <div class="run">
+      <h3>Run two · three agents</h3>
+      <div class="who">B1 – B3</div>
+      <ul>
+        <li>Assemble the six branches, prove it works end to end</li>
+        <li>Move ATT and Item Code Studio across</li>
+        <li>Security review, runbook, floor guide, cutover</li>
+      </ul>
+    </div>
+    <div class="run">
+      <h3>Roughly ten weeks</h3>
+      <div class="who">to v1</div>
+      <ul>
+        <li>The parts that slip are DNS, certificates and the Google console — so they go first</li>
+        <li>Every agent finishes by writing down what it assumed and what it left undone</li>
+        <li>One script proves the eight release criteria, and keeps proving them afterwards</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">
+    <p><strong>Open item.</strong> Three console directions are built and waiting on a choice —
+    a left rail with dense rows, a top navigation with a calmer layout, or a command-driven
+    console with almost no chrome. Everything else in this document is settled.</p>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Honest risks</div>
+  <h2>What we are carrying on purpose</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Risk</th><th>How it is handled</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Removing access takes up to 60 seconds</strong></td><td>Accepted. Deactivating someone also ends their sessions immediately and stops new tokens at once, and disabling their Google account closes sign-in entirely.</td></tr>
+        <tr><td><strong>Item Code Studio serves the public and admins from one application</strong></td><td>Three structural locks rather than discipline: every write sits behind one guard; the public list is an allowlist, so a forgotten page fails closed; and the public side reads through a database account with no write permission at all.</td></tr>
+        <tr><td><strong>Service names are visible before signing in</strong></td><td>Accepted deliberately, so people can go straight to a tool they already use. Nothing is on the public internet, and that page carries names and addresses only — no roles, no people, no status.</td></tr>
+        <tr><td><strong>Employee records exist in both MM OS and ERPNext</strong></td><td>MM OS is authoritative for access. A drift report is scheduled for v2 rather than pretended away.</td></tr>
+        <tr><td><strong>AI usage depends on services reporting it</strong></td><td>A service that does not report shows as <span class="mono">UNREPORTED</span> — visibly, not as a blank row.</td></tr>
+        <tr><td><strong>A private network is friction, and people route around friction</strong></td><td>The real adoption risk. Watched for, and answered with usability rather than policy memos.</td></tr>
+        <tr><td><strong>VPN access lists rot</strong></td><td>Monthly audit of profiles against active employees, as a scheduled task with a command to run — not someone's memory.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note act">
+    <p><strong>Backups are only real once restored.</strong> A restore into a scratch database
+    is part of the release criteria and repeats quarterly. An untested backup is a rumour.</p>
+  </div>
+</section>
+
+<footer>
+  <span>MM OS blueprint · MiniMines IT</span>
+  <span>Detail: docs/01 – docs/09</span>
+  <span>Brand: brand/BRAND.md</span>
+  <span>Prototype: demo/console-directions.html</span>
+</footer>
+
+</div>

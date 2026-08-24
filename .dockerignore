@@ -1,0 +1,45 @@
+# Build-context hygiene. Added by the orchestrator after a real build failure:
+#   ERROR: invalid file request frontend/dist/assets/index-C0Zf7F_1.js
+#
+# Without this file every `docker build` ships ~240MB of context (backend/.venv 123M,
+# frontend/node_modules 73M, servicedesk/frontend/node_modules 41M, .git) — and, worse,
+# frontend/dist carries content-hashed filenames that change on every `npm run build`, so
+# buildkit can snapshot a path that no longer exists and fail the build. The Dockerfile builds
+# the frontend in its own `frontend-build` stage, so the host's dist and node_modules must
+# never enter the context; letting them in also risks the image's npm build reusing stale host
+# artifacts instead of a clean install.
+.git
+.gitignore
+.dockerignore
+
+# never send dependency trees or build output -- the image produces its own
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.vite
+
+# secrets must never enter a build context, even though the image does not COPY them
+deploy/.env
+deploy/secrets
+**/*.pem
+**/*.key
+.env
+
+# local data and dumps
+data
+backups
+**/*.db
+**/*.sqlite3
+
+# documentation and process files the runtime image has no use for
+docs
+handoff
+demo
+onepager
+agents
+RESUME.md
+README.md

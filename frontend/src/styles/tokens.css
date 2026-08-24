@@ -1,0 +1,97 @@
+/* ══════════════════════════════════════════════════════════════════════
+   MM OS — MiniMines brand tokens
+   Lifted verbatim from demo/console-directions.html (the visual source of
+   truth, brand/UI-DECISIONS.md § Colour roles). Do not hardcode a colour
+   anywhere outside this file — components read these custom properties.
+
+   Petrol #005D7F leads (logo ink, sampled from the wordmark).
+   Navy #002060 grounds the chrome. Orange #FF6A00 is ACTION ONLY.
+   Cyan #1BA4BE supports. Neutrals are cool and blue-tinted, not grey.
+   Type: Roboto + Roboto Condensed.
+   ══════════════════════════════════════════════════════════════════════ */
+:root {
+  --petrol:      #005D7F;
+  --petrol-700:  #004962;
+  --petrol-100:  #DFEDF3;
+  --navy:        #002060;
+  --navy-800:    #0F4861;
+  --navy-900:    #082836;
+  --orange:      #FF6A00;
+  --orange-100:  #FFEDE0;
+  --cyan:        #1BA4BE;
+  --cyan-100:    #E1F3F7;
+
+  --ground:      #F0F4FA;
+  --surface:     #FFFFFF;
+  --surface-2:   #E9EDF5;
+  --surface-3:   #E0E4EA;
+  --border:      #D2DBE6;
+  --border-soft: #E6EAF2;
+  --text:        #0E1B26;
+  --text-2:      #48596A;
+  --text-3:      #7A8996;
+
+  --ok:          #1B7F5A;
+  --warn:        #A9720E;
+  --warn-100:    #FBF0DA;
+
+  --chrome:      var(--navy);
+  --chrome-text: #C4D3DD;
+  --chrome-line: #123055;
+
+  --shadow: 0 1px 2px rgba(8,40,54,.06), 0 10px 28px -14px rgba(8,40,54,.22);
+  --r: 8px;
+  --r-sm: 5px;
+
+  --f: 'Roboto', 'Segoe UI', system-ui, sans-serif;
+  --fc: 'Roboto Condensed', 'Roboto', 'Segoe UI', sans-serif;
+
+  /* console density — direction B, top nav and calm (the only direction built) */
+  --pad: 26px; --row: 15px; --fs: 15px; --gap: 18px; --h1: 27px; --h2: 17px; --wide: 1080px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --petrol:      #4FB8D6;
+    --petrol-700:  #7FCFE6;
+    --petrol-100:  #0D303D;
+    --navy:        #03121C;
+    --navy-800:    #0F4861;
+    --navy-900:    #061A22;
+    --orange:      #FF8B3D;
+    --orange-100:  #3B2214;
+    --cyan:        #5FCBE0;
+    --cyan-100:    #0E3038;
+
+    --ground:      #061A22;
+    --surface:     #0D2731;
+    --surface-2:   #143440;
+    --surface-3:   #1B4150;
+    --border:      #1F4453;
+    --border-soft: #163540;
+    --text:        #E6EFF3;
+    --text-2:      #A7BAC3;
+    --text-3:      #7B909B;
+
+    --ok:          #4FC08D;
+    --warn:        #E0AC45;
+    --warn-100:    #322717;
+
+    --chrome:      #03121C;
+    --chrome-text: #A7BAC3;
+    --chrome-line: #14313E;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.5), 0 14px 34px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"] {
+  --petrol:#4FB8D6; --petrol-700:#7FCFE6; --petrol-100:#0D303D;
+  --navy:#03121C; --navy-800:#0F4861; --navy-900:#061A22;
+  --orange:#FF8B3D; --orange-100:#3B2214; --cyan:#5FCBE0; --cyan-100:#0E3038;
+  --ground:#061A22; --surface:#0D2731; --surface-2:#143440; --surface-3:#1B4150;
+  --border:#1F4453; --border-soft:#163540;
+  --text:#E6EFF3; --text-2:#A7BAC3; --text-3:#7B909B;
+  --ok:#4FC08D; --warn:#E0AC45; --warn-100:#322717;
+  --chrome:#03121C; --chrome-text:#A7BAC3; --chrome-line:#14313E;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 14px 34px -16px rgba(0,0,0,.8);
+}

@@ -1,0 +1,17 @@
+[project]
+name = "mmos-client-py"
+version = "0.1.0"
+description = "Drop-in MM OS auth client for Python services: token verification, deny-list polling, heartbeat, LLM control-plane gate."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "httpx>=0.28,<1",
+  "python-jose[cryptography]>=3.3,<4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mmos_client*"]
