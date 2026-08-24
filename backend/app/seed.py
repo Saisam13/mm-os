@@ -15,6 +15,15 @@ Owner ruling, 24 Aug 2026 (handoff/ORCHESTRATOR.md "Owner decisions taken mid-ru
 every employee gets a local PIN account on import -- not just the ones with no corporate
 Work Email. `docs/02-data-model.md`'s "no Work Email -> local_pin" line is the floor, not
 the ceiling; see `apply_diff` and handoff/a1-identity.md ## Deviations for why.
+
+Chat-instructed, 25 Aug 2026, for the same-day demo (not yet folded into
+handoff/ORCHESTRATOR.md): a separate, additive "demo batch" mode seeds only a curated
+~20-25 person slice instead of the full sheet, plus exactly five known-PIN logins. See the
+"demo batch" section below for the three ways to run it:
+
+    python -m app.seed --seed-demo --commit          # dev machine, reads the real .xlsx, wipes first
+    python -m app.seed --demo                         # container boot, no .xlsx, never wipes
+    python -m app.seed --dump-demo-fixture             # dev machine, (re)writes app/demo_seed.py
 """
 from __future__ import annotations
 
