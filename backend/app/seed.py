@@ -22,15 +22,16 @@ import argparse
 import os
 import secrets
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO
 
 import openpyxl
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from .db import SessionLocal
-from .models import Employee, Service, ServiceRole, User
+from .models import AuditLog, Employee, Grant, Service, ServiceRole, User
 from .security import hash_pin
 
 SHEET_NAME = "Employee Role & Access Map"
