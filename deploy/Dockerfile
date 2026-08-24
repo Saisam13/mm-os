@@ -66,6 +66,9 @@ COPY --from=frontend-build /src/dist /app/frontend/dist
 # The signing key is a mounted secret file, never baked into the image — see
 # deploy/docker-compose.yml and scripts/gen-signing-key.sh. This just makes sure the
 # mount point exists with the right owner before uvicorn (running as `mmos`) starts.
+COPY deploy/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 RUN mkdir -p /run/secrets && chown -R mmos:mmos /app /run/secrets
 
 USER mmos
@@ -81,4 +84,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)"]
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Entrypoint runs optional migrate/seed steps, both default-off, then execs the same uvicorn
+# command this CMD used to run directly. Production behaviour is unchanged unless
+# MMOS_MIGRATE_ON_BOOT / MMOS_SEED_ON_BOOT are set.
+CMD ["/app/entrypoint.sh"]
