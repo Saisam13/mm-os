@@ -302,3 +302,66 @@ real ones on the VPS with `scripts/gen-signing-key.sh`.
 Driving `docker compose exec -e SOMEPATH=/tmp/...` from Git Bash gets the POSIX path rewritten
 by MSYS, so the container sees a literal `/C:/Users/...`. Set `MSYS_NO_PATHCONV=1`. This cannot
 happen on the Linux VPS.
+
+---
+
+# LIVE DEMO — deployed 25 Aug 2026, ~05:30 IST
+
+Two applications are running on the company Coolify server, both from `Saisam13/mm-os`
+(private) over a read-only deploy key.
+
+| What | URL | Coolify app |
+|---|---|---|
+| **MM OS shell** | http://hrxd6lgu3h7qpnkbpy2mqgdc.200.234.36.153.sslip.io | `mmos` |
+| **Service Desk** | http://uthjgvwpvx68afqgrz8gf9rh.200.234.36.153.sslip.io | `servicedesk` |
+
+Databases: `mmos-postgres` and `servicedesk-postgres`, both Coolify-managed.
+
+## Demo logins (MM OS) — PIN `1234` for all five
+
+| Code | Name | Department | Role |
+|---|---|---|---|
+| `MM-ITADMIN` | IT Administrator | Information Technology | platform admin |
+| `MM05` | Mandaleshvar Sharma | P-Spoke | IT agent |
+| `MM81` | Chandrashekhar Keshav Kalvit | Projects | approver (L4) |
+| `MM88` | MAMATESH UDAY NAIK | Projects | requester — **reports to MM81** |
+| `MM33` | Hardhik Pendurthi | StratOps | requester |
+
+23 people across 9 departments are seeded. Everyone else has a placeholder PIN and cannot
+sign in — that is the truthful state of a batched rollout.
+
+## Verified working on the live instances
+
+- PIN login, `/api/me`, service tiles per person (grants are deliberately uneven).
+- All three request types: **software** (`SD-2026-0001`, open, no approval), **hardware**
+  (`SD-2026-0002`, open, no approval), **automation** (`AR-2026-0001`).
+- The full automation chain, driven end to end:
+  `submitted → it_review → proposal_ready → manager_review → approved`, appearing in the
+  approver's queue and recording the decision against the proposal.
+
+## Service Desk personas are separate from MM OS accounts
+
+Service Desk runs `AUTH_MODE=stub`, so it has its own sign-in with four personas —
+`operator`, `supervisor`, `hod`, `apex` — unrelated to the MM OS employee codes. That follows
+directly from the decision to drop SSO for now: each service keeps its own login. Worth
+knowing before the meeting, because the names on screen will not match between the two.
+
+## Known gaps, none blocking
+
+- **No SLA targets are configured** — the tab works, the table is empty. Adding one live is a
+  reasonable thing to demonstrate.
+- **Creating a proposal while a ticket is still `submitted`** is accepted but does not advance
+  the state; the transition only happens from `it_review`. Harmless but confusing.
+- Service Desk is seeded `is_active=False` in the MM OS registry, so it is not shown as a tile.
+  Flip it and set `MMOS_SVC_SERVICEDESK_URL` to the URL above if you want it in the list.
+- The old `mm-os` Coolify app (`v9vem9vm1dolgnatyh1euaev`) is a dead first attempt that never
+  routed. Delete it in the UI; `mmos` is the live one.
+- `minimines-ocr` has been dead since 17 Aug; `ocr-service` is the live OCR. Safe to delete.
+
+## MUST be reverted after the meeting
+
+- `MMOS_NETWORK_MODE=public` → back to `private` with the CIDR allowlist.
+- Rotate the Coolify API token — it was sent over plain HTTP.
+- `backend/app/demo_seed.py` holds 23 real employee names (no emails). Delete it once the real
+  batched rollout replaces it.
+- Demo PINs are all `1234`.
