@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .db import SessionLocal
 from .models import AuditLog, Employee, Grant, Service, ServiceRole, User
+from .models import Session as ShellSession
 from .security import hash_pin
 
 SHEET_NAME = "Employee Role & Access Map"
@@ -554,10 +555,17 @@ def resolve_manager_codes(rows: list[EmployeeRow]) -> dict[str, str]:
 
 # ── demo batch: destructive reset (explicit and guarded, dev machine only) ──────────────
 def clear_all_people(db: OrmSession, *, force: bool = False) -> int:
-    """DESTRUCTIVE. Deletes every Employee row, which cascades (via the FKs declared in
-    models.py) to every User, Session and Grant. Only ever call this to wipe a throwaway
-    demo database before reseeding the curated batch from scratch -- the owner explicitly
-    wants the previous demo set removed and replaced, not merged with.
+    """DESTRUCTIVE. Deletes every Employee, User, Session and Grant row. Only ever call
+    this to wipe a throwaway demo database before reseeding the curated batch from
+    scratch -- the owner explicitly wants the previous demo set removed and replaced, not
+    merged with.
+
+    Deletes each table explicitly, child-first, rather than deleting only Employee and
+    relying on the database to cascade: models.py's FKs do declare ON DELETE CASCADE, but
+    SQLite (the dev/test harness -- see tests/conftest.py) does not enforce foreign keys,
+    and therefore does not fire cascades, unless `PRAGMA foreign_keys=ON` is set, which
+    this codebase does not do. Deleting explicitly behaves identically on SQLite and on
+    the real Postgres this ships to.
 
     Not wired into any --commit flag by accident: it only runs when a caller asks for it by
     name (the `--seed-demo` CLI path, or calling this function directly), and it refuses
@@ -574,8 +582,11 @@ def clear_all_people(db: OrmSession, *, force: bool = False) -> int:
             "still the throwaway demo instance."
         )
     n = db.scalar(select(func.count()).select_from(Employee)) or 0
-    print(f"WIPING {n} employee row(s) (and their users/sessions/grants, by cascade) "
+    print(f"WIPING {n} employee row(s), and every user/session/grant that references one, "
           "before reseeding the demo batch.")
+    db.execute(delete(ShellSession))
+    db.execute(delete(Grant))
+    db.execute(delete(User))
     db.execute(delete(Employee))
     return n
 
