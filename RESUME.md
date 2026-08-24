@@ -365,3 +365,28 @@ knowing before the meeting, because the names on screen will not match between t
 - `backend/app/demo_seed.py` holds 23 real employee names (no emails). Delete it once the real
   batched rollout replaces it.
 - Demo PINs are all `1234`.
+
+## Final verification — 25 Aug 2026, 07:50 IST
+
+Everything below was exercised against the live servers, not tests.
+
+| Check | Result |
+|---|---|
+| Item Code Studio, Sales Hub, ERPNext, OCR, MM OS, Service Desk | all **HTTP 200** |
+| All five MM OS logins | working, each with tiles that open |
+| Three ticket types raised | `SD-2026-0003` software, `SD-2026-0004` hardware, `AR-2026-0003` automation |
+| Full approval chain | MM88 raised → MM05 reviewed and proposed → **MM81 approved** |
+| Proposal on a `submitted` ticket | correctly rejected `409 wrong_status` |
+| SLA targets | **36 rows** — 9 departments x low/normal/high/urgent |
+
+**Approval routing as configured:** a request from **Projects** goes to **MM81**; anything else
+falls to the default approver, **MM-ITADMIN**. The preview box on the Approval Routing screen
+shows this for any combination.
+
+**Two traps worth remembering.** The seed is idempotent, which protects an admin's edits but
+also means **stale rows are never corrected** — the approval rule kept pointing at the old stub
+approver until it was updated by hand. And deactivating a service silently strips it from
+everyone's tiles, which is correct but left two demo accounts with an empty service list until
+they were re-granted.
+
+Documents (private artifacts): MM OS, Item Code Studio, Sales Hub, and the internal Runbook.
