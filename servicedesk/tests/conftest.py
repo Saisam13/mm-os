@@ -64,15 +64,20 @@ def client():
 
 
 # ── people, matching app/org_chart.py's default_seed() so approver computation lines up ──
+# Five real MiniMines employees (backend/app/demo_seed.py), keyed by employee code — see
+# app/org_chart.py's SEED_PERSONAS docstring for why and the manager chain (MM88 -> MM81).
 PEOPLE = {
-    "operator": dict(sub="user:op-1", emp="MM19", name="P-Spoke Operator", email=None,
-                     dept="P-Spoke", division="Production", band="NON L", approval_level="Operational"),
-    "supervisor": dict(sub="user:sup-1", emp="MM05", name="P-Spoke Supervisor", email="supervisor@m-mines.com",
-                        dept="P-Spoke", division="Production", band="L2", approval_level="Operational"),
-    "hod": dict(sub="user:hod-1", emp="MM02", name="P-Spoke HOD", email="hod@m-mines.com",
-                dept="P-Spoke", division="Production", band="L3", approval_level="L3 (HOD)"),
-    "apex": dict(sub="user:apex-1", emp="MM01", name="Apex Approver", email="apex@m-mines.com",
-                 dept="Corporate", division="Corporate", band="L5", approval_level="L5 (Apex)"),
+    "MM88": dict(sub="user:MM88", emp="MM88", name="MAMATESH UDAY NAIK", email=None,
+                 dept="Projects", division="Projects", band="L2", approval_level="L1 (Associate)"),
+    "MM81": dict(sub="user:MM81", emp="MM81", name="Chandrashekhar Keshav Kalvit", email=None,
+                 dept="Projects", division="Corporate", band="L4", approval_level="L4 (Div Head)"),
+    "MM05": dict(sub="user:MM05", emp="MM05", name="Mandaleshvar Sharma", email=None,
+                 dept="P-Spoke", division="Production", band="L4", approval_level="L3 (HOD)"),
+    "MM33": dict(sub="user:MM33", emp="MM33", name="Hardhik Pendurthi", email=None,
+                 dept="StratOps", division="Corporate", band="NON L", approval_level="Oversight"),
+    "MM-ITADMIN": dict(sub="user:MM-ITADMIN", emp="MM-ITADMIN", name="IT Administrator",
+                        email="itadmin@m-mines.com", dept="Information Technology",
+                        division="Corporate", band="L3", approval_level=None),
 }
 
 

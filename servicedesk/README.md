@@ -40,15 +40,33 @@ for.
 ## Seed
 
 There is no data seed — Service Desk starts empty; `app/seed.py` only ensures the schema
-exists for local/dev use. The only "seed" people in this repo are `app.org_chart.SEED_PERSONAS`
-(operator → supervisor → HOD → Apex), used by the tests, `app/org_chart.py`'s default
-approver-lookup fixture, and the `/_dev/token` manual-testing endpoint below.
+exists for local/dev use, plus two demo-readiness exceptions that are never empty even on a
+fresh install: Approval Routing (one catch-all rule and a default approver) and the SLA
+config table (a row per real department per ticket priority) — see `ensure_default_approval_
+routing` and `ensure_default_sla_config` in that file.
+
+The only "seed" people in this repo are `app.org_chart.SEED_PERSONAS` — five **real**
+MiniMines employees taken verbatim from `backend/app/demo_seed.py`, keyed by employee code:
+
+| Code | Name | Department | Role in the demo |
+|---|---|---|---|
+| `MM88` | MAMATESH UDAY NAIK | Projects | requester |
+| `MM81` | Chandrashekhar Keshav Kalvit | Projects | approver — MM88's real manager |
+| `MM05` | Mandaleshvar Sharma | P-Spoke | IT agent |
+| `MM33` | Hardhik Pendurthi | StratOps | second requester, different department |
+| `MM-ITADMIN` | IT Administrator | Information Technology | Service Desk admin |
+
+Used by the tests, `app/org_chart.py`'s default approver-lookup fixture, and the
+`/_dev/token` manual-testing endpoint below. No email addresses are seeded for the four real
+employees — `backend/app/demo_seed.py` deliberately excludes them (most are personal Gmail
+addresses) — dev-token login needs none; `MM-ITADMIN` keeps its real role address,
+`itadmin@m-mines.com`.
 
 ## Manually verifying it (no live MM OS to sign in through)
 
 ```bash
 curl -X POST http://localhost:8010/_dev/token -H 'Content-Type: application/json' \
-     -d '{"persona":"operator","roles":["requester"]}'
+     -d '{"persona":"MM88","roles":["requester"]}'
 ```
 
 Returns `{"token": "..."}` — use it as `Authorization: Bearer <token>`, or open the frontend

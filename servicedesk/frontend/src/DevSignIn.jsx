@@ -6,12 +6,14 @@
 import { useState } from "react";
 import { setToken } from "./api.js";
 
+// Real MiniMines employees (backend/app/demo_seed.py), keyed by employee code so the same
+// person resolves the same way in MM OS — see app/org_chart.py's SEED_PERSONAS.
 const PERSONAS = [
-  { key: "operator", label: "MM19 — P-Spoke Operator", roles: ["requester"] },
-  { key: "supervisor", label: "MM05 — P-Spoke Supervisor (IT agent)", roles: ["agent"] },
-  { key: "hod", label: "MM02 — P-Spoke HOD (approver)", roles: ["requester"] },
-  { key: "apex", label: "MM01 — Apex Approver", roles: ["requester"] },
-  { key: "hod", label: "MM02 — P-Spoke HOD (Service Desk admin)", roles: ["admin"] },
+  { key: "MM88", label: "MM88 · MAMATESH UDAY NAIK · Projects · requester", roles: ["requester"] },
+  { key: "MM81", label: "MM81 · Chandrashekhar Keshav Kalvit · Projects · approver", roles: ["requester"] },
+  { key: "MM05", label: "MM05 · Mandaleshvar Sharma · P-Spoke · IT agent", roles: ["agent"] },
+  { key: "MM33", label: "MM33 · Hardhik Pendurthi · StratOps · requester", roles: ["requester"] },
+  { key: "MM-ITADMIN", label: "MM-ITADMIN · IT Administrator · Service Desk admin", roles: ["admin"] },
 ];
 
 export default function DevSignIn({ onSignedIn }) {

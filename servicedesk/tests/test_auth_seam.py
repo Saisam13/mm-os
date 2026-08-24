@@ -12,18 +12,18 @@ def test_missing_token_is_401(client):
 
 
 def test_role_required_403_shape(client):
-    r = client.get("/api/tickets/queue", headers=auth(token_for("operator")))  # default role: requester
+    r = client.get("/api/tickets/queue", headers=auth(token_for("MM88")))  # default role: requester
     assert r.status_code == 403
     body = r.json()["detail"]
     assert body == {"error": "role_required", "need": "agent", "have": ["requester"]}
 
 
 def test_revoked_subject_is_rejected(client):
-    token = token_for("operator")
+    token = token_for("MM88")
     ok = client.get("/api/tickets/mine", headers=auth(token))
     assert ok.status_code == 200
 
-    revoke_subject("user:op-1")
+    revoke_subject("user:MM88")
     r = client.get("/api/tickets/mine", headers=auth(token))
     assert r.status_code == 401
 
@@ -34,7 +34,7 @@ def test_health_and_badge_need_no_auth(client):
 
 
 def test_dev_token_endpoint_mints_a_usable_token(client):
-    r = client.post("/_dev/token", json={"persona": "hod", "roles": ["agent"]})
+    r = client.post("/_dev/token", json={"persona": "MM81", "roles": ["agent"]})
     assert r.status_code == 200
     token = r.json()["token"]
     me = client.get("/api/tickets/mine", headers=auth(token))

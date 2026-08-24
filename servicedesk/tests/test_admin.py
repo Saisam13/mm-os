@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from .conftest import auth, token_for
 
-ADMIN = lambda: auth(token_for("hod", roles=["admin"]))
-NON_ADMIN = lambda: auth(token_for("operator", roles=["requester"]))
-AGENT_ONLY = lambda: auth(token_for("supervisor", roles=["agent"]))
+ADMIN = lambda: auth(token_for("MM-ITADMIN", roles=["admin"]))
+NON_ADMIN = lambda: auth(token_for("MM88", roles=["requester"]))
+AGENT_ONLY = lambda: auth(token_for("MM05", roles=["agent"]))
 
 
 def test_non_admin_cannot_create_department(client):
@@ -50,9 +50,9 @@ def test_duplicate_department_name_rejected(client):
 
 def test_local_role_grant_and_revoke(client):
     r = client.put(
-        "/api/admin/roles/user:sup-1",
-        json={"employee_code": "MM05", "full_name": "P-Spoke Supervisor", "department": "P-Spoke",
-              "is_agent": False, "is_department_manager": True, "is_approver": True},
+        "/api/admin/roles/user:MM05",
+        json={"employee_code": "MM05", "full_name": "Mandaleshvar Sharma", "department": "P-Spoke",
+              "is_agent": True, "is_department_manager": True, "is_approver": True},
         headers=ADMIN(),
     )
     assert r.status_code == 200, r.text
@@ -61,19 +61,19 @@ def test_local_role_grant_and_revoke(client):
     assert row["is_approver"] is True
 
     listed = client.get("/api/admin/roles", headers=ADMIN()).json()
-    assert any(x["sub"] == "user:sup-1" for x in listed)
+    assert any(x["sub"] == "user:MM05" for x in listed)
 
-    r = client.delete("/api/admin/roles/user:sup-1", headers=ADMIN())
+    r = client.delete("/api/admin/roles/user:MM05", headers=ADMIN())
     assert r.status_code == 204
     listed = client.get("/api/admin/roles", headers=ADMIN()).json()
-    assert not any(x["sub"] == "user:sup-1" for x in listed)
+    assert not any(x["sub"] == "user:MM05" for x in listed)
 
 
 def test_people_directory_lists_seed_personas(client):
     r = client.get("/api/admin/people", headers=ADMIN())
     assert r.status_code == 200
     subs = {p["sub"] for p in r.json()}
-    assert "user:op-1" in subs and "user:hod-1" in subs
+    assert "user:MM88" in subs and "user:MM81" in subs
 
 
 def test_approval_rule_crud_and_default(client):
@@ -81,7 +81,7 @@ def test_approval_rule_crud_and_default(client):
         "/api/admin/approval-rules",
         json={
             "name": "Automation over $ threshold", "department": "P-Spoke", "category": None,
-            "priority": "high", "approvers": [{"sub": "user:hod-1", "employee_code": "MM02"}],
+            "priority": "high", "approvers": [{"sub": "user:MM81", "employee_code": "MM81"}],
             "mode": "any_of", "is_active": True,
         },
         headers=ADMIN(),
@@ -94,7 +94,7 @@ def test_approval_rule_crud_and_default(client):
         f"/api/admin/approval-rules/{rule_id}",
         json={
             "name": "Automation over $ threshold", "department": "P-Spoke", "category": None,
-            "priority": "urgent", "approvers": [{"sub": "user:hod-1", "employee_code": "MM02"}],
+            "priority": "urgent", "approvers": [{"sub": "user:MM81", "employee_code": "MM81"}],
             "mode": "any_of", "is_active": True,
         },
         headers=ADMIN(),
@@ -102,9 +102,12 @@ def test_approval_rule_crud_and_default(client):
     assert r.status_code == 200
     assert r.json()["priority"] == "urgent"
 
-    r = client.put("/api/admin/approval-default", json={"sub": "user:apex-1", "employee_code": "MM01"}, headers=ADMIN())
+    r = client.put(
+        "/api/admin/approval-default", json={"sub": "user:MM-ITADMIN", "employee_code": "MM-ITADMIN"},
+        headers=ADMIN(),
+    )
     assert r.status_code == 200
-    assert client.get("/api/admin/approval-default", headers=ADMIN()).json()["employee_code"] == "MM01"
+    assert client.get("/api/admin/approval-default", headers=ADMIN()).json()["employee_code"] == "MM-ITADMIN"
 
     r = client.delete(f"/api/admin/approval-rules/{rule_id}", headers=ADMIN())
     assert r.status_code == 204
@@ -115,13 +118,13 @@ def test_approval_preview_is_plain_language(client):
         "/api/admin/approval-rules",
         json={
             "name": "P-Spoke rule", "department": "P-Spoke", "category": None, "priority": None,
-            "approvers": [{"sub": "user:hod-1", "employee_code": "MM02"}], "mode": "any_of", "is_active": True,
+            "approvers": [{"sub": "user:MM81", "employee_code": "MM81"}], "mode": "any_of", "is_active": True,
         },
         headers=ADMIN(),
     )
     r = client.post(
         "/api/admin/approval-preview",
-        json={"department": "P-Spoke", "category": None, "priority": "high", "requester_sub": "user:op-1"},
+        json={"department": "P-Spoke", "category": None, "priority": "high", "requester_sub": "user:MM88"},
         headers=ADMIN(),
     )
     assert r.status_code == 200

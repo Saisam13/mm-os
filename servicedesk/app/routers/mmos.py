@@ -47,7 +47,7 @@ if _cfg.auth_mode == "stub":
 
 
 class DevTokenIn(BaseModel):
-    persona: str  # one of app.org_chart.SEED_PERSONAS's keys: operator, supervisor, hod, apex
+    persona: str  # one of app.org_chart.SEED_PERSONAS's keys: MM88, MM81, MM05, MM33, MM-ITADMIN
     roles: list[str] = ["requester"]
 
 

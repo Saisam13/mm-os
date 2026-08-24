@@ -3,11 +3,11 @@ chain — raised, triaged, IT proposal, department-manager approval, resolved �
 row for every hop (docs/07 / agents/A5-servicedesk.md)."""
 from tests.conftest import auth, token_for
 
-AGENT = auth(token_for("supervisor", roles=["agent"]))
-HOD = auth(token_for("hod"))
+AGENT = auth(token_for("MM05", roles=["agent"]))
+HOD = auth(token_for("MM81"))
 
 
-def test_operator_to_it_proposal_to_hod_approval_to_build_to_deployed(client, db):
+def test_requester_to_it_proposal_to_manager_approval_to_build_to_deployed(client, db):
     import uuid
 
     from app.models import Event
@@ -15,13 +15,13 @@ def test_operator_to_it_proposal_to_hod_approval_to_build_to_deployed(client, db
     submit = client.post(
         "/api/tickets",
         json={"kind": "automation", "title": "Nightly DPR watch", "body": "Flag variance beyond 5%"},
-        headers=auth(token_for("operator")),
+        headers=auth(token_for("MM88")),
     )
     assert submit.status_code == 201
     ticket = submit.json()
     tid = ticket["id"]
     assert ticket["status"] == "submitted"
-    assert ticket["approver_sub"] == "user:hod-1"
+    assert ticket["approver_sub"] == "user:MM81"
 
     r = client.post(f"/api/tickets/{tid}/transition", json={"to_status": "it_review"}, headers=AGENT)
     assert r.status_code == 200 and r.json()["status"] == "it_review"
@@ -71,7 +71,7 @@ def test_operator_to_it_proposal_to_hod_approval_to_build_to_deployed(client, db
 def test_support_ticket_full_lifecycle(client):
     submit = client.post(
         "/api/tickets", json={"kind": "support", "title": "VPN drops", "body": "Disconnects every 10 min"},
-        headers=auth(token_for("operator")),
+        headers=auth(token_for("MM88")),
     )
     tid = submit.json()["id"]
     for to_status in ("in_progress", "waiting_on_requester", "resolved", "closed"):
@@ -87,11 +87,11 @@ def test_events_endpoint_lists_history_and_respects_privacy(client):
     submit = client.post(
         "/api/tickets",
         json={"kind": "support", "title": "Private one", "body": "…", "is_private": True},
-        headers=auth(token_for("operator")),
+        headers=auth(token_for("MM88")),
     )
     tid = submit.json()["id"]
 
-    mine = client.get(f"/api/tickets/{tid}/events", headers=auth(token_for("operator"))).json()
+    mine = client.get(f"/api/tickets/{tid}/events", headers=auth(token_for("MM88"))).json()
     assert len(mine) == 1 and mine[0]["to_status"] == "open"
 
     peer = auth(custom_token("user:peer-2", dept="P-Spoke", roles=["requester"]))

@@ -64,16 +64,16 @@ def create_proposal(
     )
     db.add(proposal)
 
-    became_ready = ticket.status == "it_review"
-    if became_ready:
-        apply_transition(db, ticket, "proposal_ready", actor_sub=user.sub, detail={"proposal_version": next_version})
+    # Guarded above: ticket.status is always "it_review" here, so this always carries the
+    # ticket forward to proposal_ready — first proposal or a revision after
+    # changes_requested looped back to it_review, either way.
+    apply_transition(db, ticket, "proposal_ready", actor_sub=user.sub, detail={"proposal_version": next_version})
 
     db.commit()
     db.refresh(proposal)
 
-    if became_ready:
-        requester = get_person(ticket.requester_sub)
-        notify("proposal_ready", requester.email if requester else None, ref=ticket.ref, title=ticket.title)
+    requester = get_person(ticket.requester_sub)
+    notify("proposal_ready", requester.email if requester else None, ref=ticket.ref, title=ticket.title)
 
     return proposal
 
