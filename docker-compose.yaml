@@ -71,13 +71,6 @@ services:
         fi
         echo "[boot] starting uvicorn"
         exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*' 
-    # Published directly on the host rather than routed through Coolify's Traefik. The
-    # proxy assigned a domain but registered no route, and a demo is not the moment to
-    # debug label generation -- this is deterministic and reachable immediately. Revert to
-    # proxy routing (and drop this mapping) when the deployment is made private again;
-    # docs/11-security-review.md finding 1 is precisely about published ports.
-    ports:
-      - "8090:8000"
     expose:
       - "8000"
     healthcheck:

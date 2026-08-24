@@ -32,3 +32,8 @@ desktop.ini
 
 # orchestration stop-file, never committed
 .checkpoint-stop
+
+# stray test artifacts
+*.smoke.db
+servicedesk_smoke.db
+.env.smoke
