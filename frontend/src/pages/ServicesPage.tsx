@@ -2,7 +2,7 @@ import React from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { ServiceMark } from '../components/ServiceMark'
 import { EmptyState } from '../components/EmptyState'
-import { useLaunchService } from '../lib/useLaunchService'
+import { useLaunchService, canEmbed } from '../lib/useLaunchService'
 import { kindFromLaunchMode } from '../lib/serviceKind'
 
 // The same surface as the entry page, now with role and status filled in.
@@ -36,6 +36,7 @@ export function ServicesPage() {
                     <span className="svc-grow" />
                     <span className="svc-meta">
                       {isPending ? <span className="chip">Opening…</span> : null}
+                      <span className="chip cond">{canEmbed(s) ? 'Embedded' : 'New tab'}</span>
                       <span className={`chip${s.role === 'admin' || s.role === 'agent' || s.role === 'manager' ? ' pet' : ''}`}>{s.role}</span>
                       <span className={`dot${s.health === 'up' ? '' : s.health === 'build' ? ' o' : ' w'}`} />
                     </span>

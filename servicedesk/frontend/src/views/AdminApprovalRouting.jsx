@@ -50,10 +50,14 @@ export default function AdminApprovalRouting() {
 
   return (
     <div>
-      <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+      <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
         <p className="section-title" style={{ margin: 0 }}>Approval routing</p>
         <button className="btn primary" onClick={() => setModal("new")}>Add rule</button>
       </div>
+      <p className="field-hint" style={{ margin: "0 0 14px" }}>
+        Governs automation requests only. Software and hardware issues need no approval and
+        never consult this table.
+      </p>
       {error && <p className="error-text">{error}</p>}
 
       <div className="card">

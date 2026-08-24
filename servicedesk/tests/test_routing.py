@@ -94,3 +94,32 @@ def test_rule_skips_requester_as_their_own_approver(db):
     result = resolve_approver(db, "P-Spoke", None, "normal", "user:op-1")
     assert result.source == "rule"
     assert result.approver_sub == "user:hod-1"  # skipped the requester themselves
+
+
+def test_seed_default_routing_is_never_empty(db):
+    """Scope decision, 25 Aug 2026: a fresh install (or a wiped test database) must never
+    have zero approval rules and zero default approver — app/seed.py's
+    `ensure_default_approval_routing` is what the app calls at startup to guarantee that."""
+    from app.models import ApprovalDefault, ApprovalRule
+    from app.seed import ensure_default_approval_routing
+
+    assert db.query(ApprovalRule).count() == 0
+    assert db.query(ApprovalDefault).count() == 0
+
+    ensure_default_approval_routing()
+
+    rules = db.query(ApprovalRule).all()
+    assert len(rules) == 1
+    assert rules[0].department is None and rules[0].category is None and rules[0].priority is None
+    assert rules[0].approvers  # never empty
+
+    default = db.query(ApprovalDefault).first()
+    assert default is not None and default.sub
+
+    # Calling it again must not duplicate the catch-all rule or the default row.
+    ensure_default_approval_routing()
+    assert db.query(ApprovalRule).count() == 1
+    assert db.query(ApprovalDefault).count() == 1
+
+    result = resolve_approver(db, "Any-Department-At-All", None, "normal", "user:apex-1")
+    assert result.approver_sub is not None

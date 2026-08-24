@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
-import { StatusPill, PrivatePill, Ref, age } from "../components.jsx";
+import { StatusPill, PrivatePill, Ref, age, requestTypeLabel } from "../components.jsx";
 
 // Triage and assign happen here; proposing, revising and resolving happen on the ticket
 // detail page once claimed (TicketDetail.jsx) — the same workspace either way, per docs/07.
@@ -33,7 +33,7 @@ export default function AgentConsole({ onOpen }) {
       <div className="card">
         <table>
           <thead>
-            <tr><th>Ref</th><th>Title</th><th>Kind</th><th>Status</th><th>Assignee</th><th>Age</th><th></th></tr>
+            <tr><th>Ref</th><th>Title</th><th>Type</th><th>Status</th><th>Assignee</th><th>Age</th><th></th></tr>
           </thead>
           <tbody>
             {rows?.length === 0 && (
@@ -43,7 +43,7 @@ export default function AgentConsole({ onOpen }) {
               <tr key={t.id}>
                 <td onClick={() => onOpen(t.id)} style={{ cursor: "pointer" }}><Ref>{t.ref}</Ref></td>
                 <td onClick={() => onOpen(t.id)} style={{ cursor: "pointer" }}>{t.title} {t.is_private && <PrivatePill />}</td>
-                <td className="cond">{t.kind}</td>
+                <td className="cond">{requestTypeLabel(t)}</td>
                 <td><StatusPill status={t.status} /></td>
                 <td className="cond">{t.assignee_sub || "—"}</td>
                 <td className="num">{age(t.created_at)}</td>

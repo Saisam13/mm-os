@@ -4,6 +4,7 @@ import { AuthProvider } from './auth/AuthContext'
 import { ProtectedLayout, AdminGuard } from './routes/Guards'
 import { EntryPage } from './pages/EntryPage'
 import { ServicesPage } from './pages/ServicesPage'
+import { ServiceOpenPage } from './pages/ServiceOpenPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { AdminTabs } from './pages/admin/AdminTabs'
 import { PeoplePage } from './pages/admin/PeoplePage'
@@ -21,6 +22,7 @@ export function App() {
 
           <Route element={<ProtectedLayout />}>
             <Route path="/services" element={<ServicesPage />} />
+            <Route path="/services/open/:slug" element={<ServiceOpenPage />} />
             <Route path="/profile" element={<ProfilePage />} />
 
             <Route element={<AdminGuard />}>

@@ -1,0 +1,65 @@
+# Coolify deployment for the hosted demo. NOT the production topology.
+#
+# Differences from deploy/docker-compose.yml, all deliberate and all temporary:
+#
+#  * No `secrets:` block. The production compose mounts the RSA signing key as a secret file
+#    that is gitignored and therefore absent on a fresh clone, which would fail the deploy.
+#    Here MMOS_SIGNING_KEY_PATH points into a persistent volume and app/security.py generates
+#    the key on first boot, then reuses it. Still a file, never an env var.
+#  * `command:` runs deploy/entrypoint.sh, which applies migrations (and optionally seeds)
+#    before serving. Production keeps that an operator step.
+#  * MMOS_NETWORK_MODE=public. The design is VPN-only with a CIDR allowlist; the demo has to
+#    be reachable from anywhere. THIS MUST GO BACK TO `private` AFTER THE DEMO.
+#
+# Set in Coolify's environment, not here: POSTGRES_PASSWORD, MMOS_ISSUER, MMOS_COOKIE_DOMAIN.
+services:
+  postgres:
+    image: postgres:16.15-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mmos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the Coolify environment}
+      POSTGRES_DB: mmos
+    volumes:
+      - mmos_pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mmos -d mmos"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SERVICE_FQDN_API_8000: ${SERVICE_FQDN_API_8000:-}
+      MMOS_DATABASE_URL: postgresql+psycopg://mmos:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the Coolify environment}@postgres:5432/mmos
+      MMOS_NETWORK_MODE: "public"
+      MMOS_SIGNING_KEY_PATH: /data/mmos_signing_key.pem
+      MMOS_SEED_ON_BOOT: "true"
+      MMOS_ENVIRONMENT: "demo"
+      MMOS_COOKIE_SECURE: "${MMOS_COOKIE_SECURE:-false}"
+      MMOS_COOKIE_DOMAIN: "${MMOS_COOKIE_DOMAIN:-}"
+      MMOS_ISSUER: "${MMOS_ISSUER:-http://localhost:8000}"
+    volumes:
+      - mmos_keydata:/data
+    command: ["sh", "/app/deploy/entrypoint.sh"]
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  mmos_pgdata:
+  mmos_keydata:

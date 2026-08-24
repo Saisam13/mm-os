@@ -30,7 +30,7 @@ export default function MyRequests({ onOpen, onNew }) {
               <tr key={t.id} onClick={() => onOpen(t.id)} style={{ cursor: "pointer" }}>
                 <td><Ref>{t.ref}</Ref></td>
                 <td>{t.title} {t.is_private && <PrivatePill />}</td>
-                <td className="cond">{t.kind}</td>
+                <td className="cond">{requestTypeLabel(t)}</td>
                 <td><StatusPill status={t.status} /></td>
                 <td className="num">{age(t.created_at)}</td>
               </tr>

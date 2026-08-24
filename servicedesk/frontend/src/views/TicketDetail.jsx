@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
-import { StatusPill, PrivatePill, Ref } from "../components.jsx";
+import { StatusPill, PrivatePill, Ref, requestTypeLabel } from "../components.jsx";
 
 const SUPPORT_NEXT = {
   open: ["in_progress", "rejected"],
@@ -115,7 +115,7 @@ export default function TicketDetail({ ticketId, me, onBack }) {
       <div className="card" style={{ padding: 18 }}>
         <p>{ticket.body}</p>
         <p className="cond" style={{ color: "var(--text-3)", marginTop: 10 }}>
-          {ticket.kind} · {ticket.requester_code} · {ticket.requester_dept} · priority {ticket.priority}
+          {requestTypeLabel(ticket)} · {ticket.requester_code} · {ticket.requester_dept} · priority {ticket.priority}
         </p>
       </div>
 
