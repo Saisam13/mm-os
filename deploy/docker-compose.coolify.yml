@@ -50,7 +50,23 @@ services:
       MMOS_ISSUER: "${MMOS_ISSUER:-http://localhost:8000}"
     volumes:
       - mmos_keydata:/data
-    command: ["sh", "/app/deploy/entrypoint.sh"]
+    # Inlined rather than a script file: deploy/ is excluded from the build context by
+    # .dockerignore, so /app/deploy/entrypoint.sh does not exist inside the image. Migrations
+    # run on boot because a hosted demo has no operator at a terminal; production keeps
+    # `alembic upgrade head` a deliberate separate step.
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        echo "[boot] alembic upgrade head"
+        python -m alembic upgrade head
+        if [ "${MMOS_SEED_ON_BOOT:-false}" = "true" ]; then
+          echo "[boot] seeding from the committed demo fixture (idempotent)"
+          python -m app.seed --demo || echo "[boot] seed reported a problem; starting the API anyway"
+        fi
+        echo "[boot] starting uvicorn"
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*' 
     expose:
       - "8000"
     healthcheck:
