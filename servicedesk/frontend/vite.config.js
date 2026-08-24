@@ -9,6 +9,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:8010",
       "/_mmos": "http://localhost:8010",
+      "/_dev": "http://localhost:8010",
     },
   },
 });
