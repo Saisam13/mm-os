@@ -54,11 +54,16 @@ services:
     secrets:
       - source: mmos_signing_key
         target: mmos_signing_key.pem
-    ports:
-      # Coolify's own proxy (Traefik) is what the internet-facing 80/443 terminates on;
-      # this host port is what Coolify's proxy or the office reverse path connects to.
-      # See deploy/COOLIFY.md for how Coolify wires this up on the VPS.
-      - "8000:8000"
+    # No host `ports:` mapping (BE-7 / B3's HIGH finding). Publishing "8000:8000" bound the
+    # container port on ALL host interfaces, and Docker's iptables integration bypasses `ufw`
+    # for published ports — which could make "not internet-facing" quietly false. Coolify's
+    # own proxy (Traefik) reaches this container over the compose-internal network by service
+    # name and terminates the internet-facing 80/443, so no host port needs publishing at all.
+    # The container still listens on 8000 (EXPOSE in the Dockerfile + the healthcheck below);
+    # it is simply reachable only from inside `mmos_internal`. See deploy/COOLIFY.md §6 for the
+    # curl that confirms nothing answers on the host's own :8000 after this change.
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)"]
       interval: 30s

@@ -1,8 +1,6 @@
-"""The auth verification seam over `packages/mmos-client-py` (agent A4, writing it in
-parallel — at the time this was written `packages/mmos-client-py/mmos_client` exists but is
-an empty package with no importable module).
-
-docs/05-service-integration.md documents the intended shape:
+"""The auth verification seam over `packages/mmos-client-py` — copied faithfully from
+servicedesk/app/mmos_seam.py (the reference implementation for this pattern across MM OS
+services). See docs/05-service-integration.md for the intended shape:
 
     from mmos_client import MMOS, require_role, CurrentUser
     mmos = MMOS(slug=..., os_url=..., service_key=..., public_paths=[...])
@@ -11,8 +9,7 @@ docs/05-service-integration.md documents the intended shape:
 This module is a same-shaped local stand-in: `CurrentUser`, `require_role(role)`, and
 `get_current_user` behave like the documented ones, verifying the same claim set
 (docs/03-api-contract.md's token claims) so swapping in the real package later is a router
-import change, not a rewrite. See `## Assumptions` in the handoff for exactly what surface
-this assumes.
+import change, not a rewrite.
 
 Two verification modes, switched by `Settings.auth_mode`:
 
@@ -21,37 +18,11 @@ Two verification modes, switched by `Settings.auth_mode`:
 - `"stub"`  — what every test in this repo runs against. A token is
   `base64url(json_claims).hex_hmac_sha256(claims, dev_secret)`, verified the same way. Not a
   real JWT; good enough to prove the seam, the role guard, and the deny-list mechanics.
+  Local dev/tests only — see app/main.py's boot guard, which refuses to start in "stub"
+  mode when environment=production.
 
-── B1 (assembly, run 2) — see handoff/b1-assembly.md "A4-A5 auth seam" for the full account ──
-
-A4's kit (`packages/mmos-client-py`) landed after this was written, and A5's handoff named
-five concrete divergences honestly rather than pretending it was a drop-in swap. What changed
-here, in "http" mode only (every test in this repo still runs "stub" and is untouched):
-
-1. `_decode_http_token` now calls into the real `mmos_client.core.MMOS._verify()` (below,
-   `_real_mmos()`) instead of a bare `jose.jwt.decode` with no deny-list check at all --
-   the old "http" path would never actually have rejected a revoked subject, since nothing
-   populated its local `_revoked_subs`/`_revoked_jti` sets in that mode. The real kit's
-   verifier does the full ordered check (kid -> signature -> iss -> aud -> exp/iat -> deny-
-   list -> roles) and runs the deny-list poller for real.
-2. `app/main.py` now calls `_real_mmos().install(app)` when `auth_mode == "http"`, so
-   `/_mmos/accept`, `/_mmos/session` and `/_mmos/health` are served by the exact same,
-   already-tested code every other service uses (the two-call handoff -- GET accept ->
-   POST session -- not the one-call POST this module used to assume alone), on the cookie
-   name `servicedesk_mmos_at` (`{slug}_mmos_at`, A4's convention), and the deny-list poller
-   and heartbeat threads actually start. `routers/mmos.py`'s own `/_mmos/accept`/`/_mmos/
-   health` routes are only registered in "stub" mode now, so there is exactly one live
-   implementation of each path at a time -- see routers/mmos.py.
-3. `require_role`'s and `can_see_full`'s `platform_admin` bypass is removed (see
-   `app/privacy.py` and `app/routers/tickets.py::_is_agent`/`app/routers/comments.py`) --
-   a deliberate answer to the question the seam inventory raised, not a silent inheritance:
-   MM OS's platform_admin flag does not carry into a service's own role vocabulary,
-   matching A4's `require_role` exactly, and a platform admin does not silently see private
-   ticket bodies either. An admin who needs Service Desk's own "admin" role is granted it
-   like anyone else.
-4. Cookie name in "stub" mode also renamed `servicedesk_session` -> `servicedesk_mmos_at`
-   for consistency with the real one above -- nothing in this repo's tests reads the cookie
-   name directly, so this is free.
+Password Manager holds no secrets of any kind yet (see SECURITY.md) — this seam only ever
+answers "who is this MM OS user", nothing more.
 """
 from __future__ import annotations
 
@@ -68,9 +39,9 @@ from fastapi import Depends, HTTPException, Request
 from .config import settings
 
 # The cookie every service-local session lives in. A4's convention (`{slug}_mmos_at`) --
-# matches `packages/mmos-client-py/mmos_client/core.py`'s default `cookie_name` exactly, so
-# "stub" and "http" mode use the same cookie and nothing in the browser needs to know which
-# mode the server is running in.
+# matches `packages/mmos-client-py/mmos_client/core.py`'s default `cookie_name`, so "stub"
+# and "http" mode use the same cookie and nothing in the browser needs to know which mode
+# the server is running in.
 COOKIE_NAME = f"{settings().mmos_service_slug}_mmos_at"
 
 _real_mmos = None  # lazily constructed; only touches the network in "http" mode
@@ -78,11 +49,8 @@ _real_mmos = None  # lazily constructed; only touches the network in "http" mode
 
 def get_real_mmos():
     """The shared `mmos_client.core.MMOS` instance for `auth_mode="http"` -- built once per
-    process. Never constructed by any test in this repo's *stub* suite (every stub test runs
-    `auth_mode="stub"`, which never calls this), so it never opens a socket during those
-    tests. The one exception is INT-1 (`tests/test_http_mode_sso.py`), which injects a
-    pre-built instance backed by an `httpx.MockTransport` via `set_real_mmos_for_testing()`
-    so the real http-mode path can be proven end to end offline -- see that file."""
+    process. Never constructed by any test in this repo (every test runs `auth_mode="stub"`,
+    which never calls this), so it never opens a socket during `pytest`."""
     global _real_mmos
     if _real_mmos is None:
         from mmos_client.core import MMOS  # packages/mmos-client-py -- first-party, not external
@@ -97,16 +65,6 @@ def get_real_mmos():
             cookie_name=COOKIE_NAME,
         )
     return _real_mmos
-
-
-def set_real_mmos_for_testing(instance) -> None:
-    """Test-only seam (INT-1). Inject a `mmos_client.core.MMOS` built with an
-    `httpx.MockTransport` so `auth_mode="http"` verification, the deny-list poller and the
-    `/_mmos/*` handoff can be exercised without a live MM OS. Production never calls this;
-    `get_real_mmos()` builds the real instance lazily from `settings()`. Pass `None` to
-    reset (so a later real construction is not shadowed by a test double)."""
-    global _real_mmos
-    _real_mmos = instance
 
 
 @dataclass(frozen=True)
@@ -129,8 +87,9 @@ class AuthError(HTTPException):
 
 
 # ── the deny-list (docs/04-auth-flow.md "Revocation, end to end") ──────────
-# A real poller (GET /api/revocations every ~60s) is A4/B1's wiring once MM OS is live; this
-# is the in-memory set the client library merges into, and what verify_token checks.
+# A real poller (GET /api/revocations every ~60s) is B1/assembly's wiring once MM OS is
+# live; this is the in-memory set the client library merges into, and what verify_token
+# checks.
 _revoked_subs: set[str] = set()
 _revoked_jti: set[str] = set()
 
@@ -199,10 +158,9 @@ def _decode_dev_token(token: str, dev_secret: str) -> dict:
 
 def _decode_http_token(token: str) -> dict:  # pragma: no cover
     """Real RS256/JWKS verification plus the live deny-list, via `packages/mmos-client-py`
-    -- the shared client every other service uses (see the module docstring's "B1" note for
-    why this replaced a bare `jose.jwt.decode` that never actually checked revocation). Not
-    exercised by any test — no live MM OS instance to mint a real token against in this
-    sandbox; `get_real_mmos()` is only ever called when `auth_mode == "http"`."""
+    -- the shared client every other service uses. Not exercised by any test — no live MM
+    OS instance to mint a real token against in this sandbox; `get_real_mmos()` is only
+    ever called when `auth_mode == "http"`."""
     from mmos_client._verify import TokenError
 
     try:
@@ -253,10 +211,9 @@ def get_current_user(request: Request) -> CurrentUser:
 
 
 def require_role(role: str):
-    """No `platform_admin` bypass -- matches `mmos_client.core.require_role` exactly. A
-    service's roles are its own vocabulary; MM OS's platform_admin flag does not carry into
-    it (see the module docstring's "B1" note, seam inventory section A.3). A platform admin
-    who needs Service Desk's "admin" role is granted it like anyone else."""
+    """No `platform_admin` bypass -- matches `mmos_client.core.require_role` and
+    servicedesk/app/mmos_seam.py exactly. A service's roles are its own vocabulary; MM OS's
+    platform_admin flag does not carry into it."""
 
     def _dep(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if role not in user.roles:

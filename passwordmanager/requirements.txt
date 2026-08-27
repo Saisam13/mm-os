@@ -1,0 +1,11 @@
+# Password Manager's own service. Kept to what backend/.venv already has installed, same
+# rule servicedesk/requirements.txt follows — no new dependency needs a compiler or a fresh
+# pip resolve. Trimmed to what this shell actually imports (no alembic/psycopg yet — there
+# is no schema to migrate until a real vault design exists, see SECURITY.md).
+fastapi==0.141.1
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-jose[cryptography]==3.5.0
+httpx==0.28.1

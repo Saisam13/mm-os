@@ -1,0 +1,10 @@
+# Item Code Studio's own service. Kept to what backend/.venv already has installed, same
+# rule servicedesk follows — no new dependency needed a compiler or a fresh pip resolve.
+fastapi==0.141.1
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-jose[cryptography]==3.5.0
+httpx==0.28.1

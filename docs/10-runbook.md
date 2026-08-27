@@ -448,12 +448,33 @@ itself an MM OS audit-log event).
 
 ## 16 · Known limits (read before scaling anything)
 
-- **Rate limiting is in-process and in-memory** (`POST /api/token/service`, 60/min/user). This
-  is fully effective at the current single-worker, single-replica deployment
-  (`deploy/Dockerfile`'s `CMD` has no `--workers` flag; `docker-compose.yml` runs one `api`
-  container). The moment either changes, every limit silently becomes N times more permissive
-  with no error and no warning. See `docs/11-security-review.md` finding #3 before adding a
-  second worker or replica.
+- **Single worker is a hard requirement, now pinned explicitly (BE-6).** The rate limiters
+  (`POST /api/token/service` and `POST /api/auth/pin`, 60/min each) **and** every
+  `mmos-client-py` service's revocation deny-list are in-process, in-memory state. With more
+  than one worker or replica, each process keeps its own counters and its own deny-list — so
+  every limit silently becomes N times more permissive, and a revocation one worker has picked
+  up is ignored by the others, all with no error, no warning, and no test that would catch it.
+  This is the single most security-relevant scaling limit in the build. The worker count is now
+  set to `1` **explicitly** at both serving entry points rather than left to uvicorn's default:
+  `deploy/entrypoint.sh` (used by `deploy/Dockerfile` / `deploy/docker-compose.yml`) and the
+  inlined command in `deploy/docker-compose.coolify.yml` both pass `--workers 1` with a comment
+  saying why; `docker-compose.yml` runs exactly one `api` container. A single worker is a
+  correct, deliberate posture for ~73 employees this phase. **Do not raise the worker count, add
+  a replica, or put a second `api` container behind the same proxy until there is a shared store
+  (Redis) for the rate-limit counters and deny-list.** See `docs/11-security-review.md`
+  finding #3.
+- **Ingress is Traefik-only — no host port is published (BE-7).** `deploy/docker-compose.yml`
+  no longer maps `8000:8000` to the host; it uses `expose: 8000` so the container is reachable
+  only over the `mmos_internal` compose network, which is what Coolify's Traefik connects to.
+  Publishing the host port bypassed `ufw` via Docker's iptables integration (B3's HIGH finding)
+  and could make "not internet-facing" false. Confirm after deploy that nothing answers on the
+  VPS host's own `:8000` — `deploy/COOLIFY.md` §6 has the exact curl.
+- **`backend/app/demo_seed.py` must be removed before the real rollout.** It holds 23 real
+  employee names (no emails) for the live demo. Delete the file **and scrub it from git
+  history** (it has been committed), then reseed from the real employee spreadsheet via
+  `python -m app.seed --xlsx ...`. The owner decides the timing; until then it stays. See
+  `deploy/.env.production.example` and the "MUST be reverted after the meeting" list in
+  `RESUME.md`.
 - **`GET /api/agent/org/chain` has no per-endpoint service ACL** — any service holding a valid
   service key can walk any subject's manager chain (minimum-disclosure fields only). See
   `docs/11-security-review.md` finding #5.
