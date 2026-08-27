@@ -21,6 +21,23 @@ from .seed import ensure_default_approval_routing, ensure_default_sla_config
 
 cfg = settings()
 
+# Fail closed: `stub` auth mode registers the dev-only /_dev/token minter and a local token
+# codec that trusts anyone. That is correct for local dev and every test in this repo, but
+# it is a full authentication bypass if it ever reaches a real deployment. Absence of
+# configuration must never mean absence of authentication, so a production environment that
+# is still in stub mode refuses to boot rather than silently serving open. Set
+# AUTH_MODE=http (with MMOS_SERVICE_KEY) for any non-development environment. An explicit
+# SERVICEDESK_ALLOW_STUB_IN_PROD=1 exists only as a deliberate, logged escape hatch.
+import os as _os
+
+if cfg.environment == "production" and cfg.auth_mode != "http":
+    if _os.environ.get("SERVICEDESK_ALLOW_STUB_IN_PROD") != "1":
+        raise RuntimeError(
+            "Service Desk refuses to start: environment=production but AUTH_MODE="
+            f"{cfg.auth_mode!r}. Set AUTH_MODE=http and MMOS_SERVICE_KEY, or set "
+            "SERVICEDESK_ALLOW_STUB_IN_PROD=1 to override (never do this on a real server)."
+        )
+
 # Dev/test convenience: create tables if they do not exist yet (sqlite here; Postgres in
 # production is migrated with Alembic — see alembic/versions/0001_initial.py, which mirrors
 # this same portable schema).
