@@ -3,6 +3,15 @@
 Deployable **shell** for a future internal password manager. Own FastAPI service, own
 container — not part of the MM OS codebase, same pattern as `servicedesk/`.
 
+> ## The one invariant this product exists to keep
+> **Every person's passwords are theirs alone. No one else can ever see them — not IT, not a
+> platform admin, not the MM OS shell, not whoever operates the server, not whoever
+> compromises it.** This is a zero-knowledge guarantee enforced by cryptography, not a
+> policy or a permission setting that an admin could flip. MM OS proves *who you are*; it is
+> never given the ability to *read what you store*. If any future change would let an
+> operator or admin read a user's secrets, that change is wrong by definition — see
+> `SECURITY.md`.
+
 **This is not a password manager yet.** It authenticates via MM OS and shows a placeholder
 page. It stores no secrets, has no vault, no encryption, and no autofill. Read
 `SECURITY.md` before adding any of that.
