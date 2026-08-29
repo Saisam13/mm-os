@@ -26,7 +26,6 @@ import base64
 import hashlib
 import secrets
 import time
-from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode
 
@@ -41,7 +40,9 @@ from ..config import settings
 from ..db import get_db
 from ..deps import audit, client_ip, current_session, current_user
 from ..models import Employee, Session, User
-from ..security import new_session_token, session_expiry, verify_pin
+from ..provision import clear_must_change, must_change_pin
+from ..ratelimit import check_rate_limit
+from ..security import hash_pin, new_session_token, session_expiry, verify_pin
 
 router = APIRouter()
 
@@ -61,26 +62,17 @@ GENERIC_PIN_ERROR = {"error": "invalid_credentials", "message": "Incorrect emplo
 # -- rate limit: per-IP PIN attempts (B3 security review, HIGH finding) -----------------
 # Employee codes are guessable (MM + digits) and the per-user lockout in pin_login() only
 # protects ONE account at a time -- without this, a single attacker could walk every
-# employee code with junk PINs and lock all 73 accounts out of MM OS within seconds. This
-# mirrors routers/tokens.py's in-process sliding-window limiter (60/min) exactly, rather
-# than inventing a second rate-limiting mechanism: same window, same style, same
-# limitation (in-process/in-memory, void across multiple workers or replicas -- B3
-# recorded that as a MEDIUM finding for the deployment; see handoff ## Assumptions). It is
-# a separate table keyed by IP (pre-authentication), not by user id like tokens.py's.
+# employee code with junk PINs and lock all 73 accounts out of MM OS within seconds.
+#
+# L1/L2 phase (28 Aug 2026): this used to be an in-process deque, so with more than one
+# worker each process kept its own budget and the throttle became N times weaker -- the
+# reason the deployment was pinned to `--workers 1`. It now shares one budget across every
+# worker through the `rate_limits` table (app/ratelimit.py): same 60/min window, same
+# "over-budget requests write nothing" property, but correct regardless of replica count.
+# Keyed by IP (pre-authentication), namespaced "pin:" so it never collides with tokens.py's
+# per-user "token:" buckets in the same shared table.
 _PIN_RATE_LIMIT = 60
 _PIN_RATE_WINDOW_SECONDS = 60.0
-_pin_hits: dict[str, deque[float]] = defaultdict(deque)
-
-
-def _pin_rate_limited(key: str) -> bool:
-    now = time.monotonic()
-    bucket = _pin_hits[key]
-    while bucket and now - bucket[0] > _PIN_RATE_WINDOW_SECONDS:
-        bucket.popleft()
-    if len(bucket) >= _PIN_RATE_LIMIT:
-        return True
-    bucket.append(now)
-    return False
 
 
 # -- the oauth state+PKCE cookie ---------------------------------------------
@@ -425,7 +417,7 @@ def pin_login(request: Request, body: dict, db: OrmSession = Depends(get_db)):
     # here either, deliberately matching routers/tokens.py's limiter: once a caller is
     # over budget, every further request in the same window would otherwise still cost a
     # DB insert + commit, turning the fix itself into a write-amplification DoS vector.
-    if _pin_rate_limited(ip):
+    if check_rate_limit(db, bucket=f"pin:{ip}", limit=_PIN_RATE_LIMIT, window_seconds=_PIN_RATE_WINDOW_SECONDS):
         raise HTTPException(429, {"error": "rate_limited", "message": "Too many PIN attempts from this network. Try again shortly."})
 
     employee_code = str(body.get("employee_code") or "").strip()
@@ -471,9 +463,49 @@ def pin_login(request: Request, body: dict, db: OrmSession = Depends(get_db)):
     audit(db, action="login.pin", actor_user_id=user.id, ip=ip)
     db.commit()
 
-    resp = JSONResponse({"ok": True})
+    # `must_change` tells the shell to route a freshly-provisioned person straight to the
+    # change-PIN screen (routers/provision.py issues one-time PINs flagged this way).
+    resp = JSONResponse({"ok": True, "must_change": must_change_pin(db, user)})
     _set_session_cookie(resp, raw)
     return resp
+
+
+# -- change PIN (self-service, clears the must-change flag) --------------------
+@router.post("/pin/change")
+def change_pin(
+    body: dict,
+    request: Request,
+    user: User = Depends(current_user),
+    db: OrmSession = Depends(get_db),
+):
+    """Change your own PIN. Requires the current PIN as proof (a live session cookie alone is
+    not enough -- a walk-up on an unlocked terminal must not be able to lock the real owner
+    out). This is the endpoint a one-time-PIN holder uses on first login; on success the
+    must-change flag is cleared."""
+    ip = client_ip(request)
+    current = str(body.get("pin") or "")
+    new_pin = str(body.get("new_pin") or "")
+
+    if not (user.pin_hash and verify_pin(current, user.pin_hash)):
+        audit(db, action="pin.change.failed", actor_user_id=user.id, ip=ip, reason="bad_current_pin")
+        db.commit()
+        raise HTTPException(401, {"error": "invalid_credentials", "message": "Current PIN is incorrect."})
+
+    if new_pin == current:
+        raise HTTPException(422, {"error": "pin_unchanged", "message": "Choose a PIN different from the current one."})
+
+    try:
+        user.pin_hash = hash_pin(new_pin)
+    except ValueError as exc:
+        raise HTTPException(422, {"error": "bad_pin", "message": str(exc)})
+
+    user.pin_set_at = datetime.now(timezone.utc)
+    user.failed_pin_attempts = 0
+    user.locked_until = None
+    clear_must_change(db, user)
+    audit(db, action="pin.change", actor_user_id=user.id, ip=ip)
+    db.commit()
+    return {"ok": True, "must_change": False}
 
 
 # -- logout --------------------------------------------------------------------

@@ -36,15 +36,24 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(autouse=True)
 def _reset_pin_rate_limiter():
-    """auth.py's per-IP PIN limiter (_pin_hits) is module-level, in-process state that
-    would otherwise leak between tests -- unlike routers/tokens.py's limiter, which is
-    naturally isolated per test because it's keyed by a fresh random user id each time,
-    this one is keyed by IP and most tests share the same TestClient-reported IP. Reset
-    around every test so throttle tests are hermetic and unrelated tests never see stale
-    hits from an earlier test in the same process."""
-    auth_module._pin_hits.clear()
+    """The PIN limiter is now a shared DB table (app.ratelimit / models.RateLimit), not the
+    old in-process _pin_hits dict. The conftest `db` fixture already wipes every table
+    between tests, so limiter state cannot leak; this clears the RateLimit rows defensively
+    before and after in case a test drives requests through its own session."""
+    from app.db import SessionLocal
+    from app.models import RateLimit
+
+    def _clear():
+        s = SessionLocal()
+        try:
+            s.query(RateLimit).delete()
+            s.commit()
+        finally:
+            s.close()
+
+    _clear()
     yield
-    auth_module._pin_hits.clear()
+    _clear()
 
 
 # ── Google id_token signing helper (test-only keypair, never touches security.py) ──────

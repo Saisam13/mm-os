@@ -5,8 +5,6 @@ per-service JWT. This is the one call every "open a service" click goes through.
 """
 from __future__ import annotations
 
-import time
-from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -17,27 +15,20 @@ from sqlalchemy.orm import Session as OrmSession
 from ..db import get_db
 from ..deps import audit, client_ip, current_employee, current_user
 from ..models import Employee, Grant, Service, User
+from ..ratelimit import check_rate_limit
 from ..security import mint_service_token
 
 router = APIRouter()
 
 # ── rate limit: 60 requests/minute per user ─────────────────────────────────
-# In-memory sliding window. A single MM OS process owns this table; a horizontally
-# scaled deployment would need a shared store (Redis) instead — see handoff Assumptions.
+# L1/L2 phase (28 Aug 2026): this was an in-process sliding window, so it only held within a
+# single worker -- the reason the deployment was pinned to `--workers 1`. It now shares one
+# budget across every worker/replica through the `rate_limits` table (app/ratelimit.py):
+# same 60/min window, same "over-budget requests write nothing" property, correct regardless
+# of how many workers serve. Keyed per user, namespaced "token:" so it never collides with
+# auth.py's per-IP "pin:" buckets in the same shared table.
 _RATE_LIMIT = 60
 _RATE_WINDOW_SECONDS = 60.0
-_hits: dict[str, deque[float]] = defaultdict(deque)
-
-
-def _rate_limited(key: str) -> bool:
-    now = time.monotonic()
-    bucket = _hits[key]
-    while bucket and now - bucket[0] > _RATE_WINDOW_SECONDS:
-        bucket.popleft()
-    if len(bucket) >= _RATE_LIMIT:
-        return True
-    bucket.append(now)
-    return False
 
 
 class TokenRequest(BaseModel):
@@ -52,7 +43,7 @@ def issue_service_token(
     employee: Employee = Depends(current_employee),
     db: OrmSession = Depends(get_db),
 ):
-    if _rate_limited(str(user.id)):
+    if check_rate_limit(db, bucket=f"token:{user.id}", limit=_RATE_LIMIT, window_seconds=_RATE_WINDOW_SECONDS):
         raise HTTPException(
             429,
             detail={

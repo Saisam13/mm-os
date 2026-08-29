@@ -22,14 +22,30 @@ from sqlalchemy import func, or_, select
 from ..config import settings
 from ..db import SessionLocal, get_db
 from ..deps import audit, client_ip, require_service_key
+from ..llm_control import (
+    LlmFeature,
+    feature_policy_dict,
+    get_or_create_feature,
+    record_feature_usage,
+    service_llm_enabled,
+)
 from ..models import AuditLog, Employee, LlmRegistration, LlmUsageDaily, Revocation, Service, User
 
 router = APIRouter()
 
 # Audit actions that count as one "config version" bump for a service's LLM control plane.
 # Deriving the version from a count of these audit rows means we need no extra column on
-# the frozen `llm_registrations` table (see handoff Assumptions).
-LLM_TOGGLE_ACTIONS = ("llm.enable", "llm.disable")
+# the frozen `llm_registrations` table (see handoff Assumptions). The `llm.feature.*` actions
+# were added for the per-feature control plane (INT-5): any policy or kill-switch change --
+# service-level OR feature-level -- bumps the same version, so a service polling /config or
+# /llm/policy sees a single monotonically-increasing number and re-fetches on any change.
+LLM_TOGGLE_ACTIONS = (
+    "llm.enable",
+    "llm.disable",
+    "llm.feature.enable",
+    "llm.feature.disable",
+    "llm.feature.policy",
+)
 
 # A heartbeat must never carry an API key. Field names are matched, not values — we never
 # log or store what was rejected, only that something was.
@@ -188,6 +204,130 @@ def heartbeat(
     return {"llm_enabled": reg.enabled, "config_version": _config_version(db, service)}
 
 
+# ── LLM control plane: the service-facing contract (INT-5) ────────────────────────────
+# All three are service-key authenticated. They never accept or return a provider API key --
+# _strip_key_fields drops any key-shaped field before it can be stored, the same guard the
+# heartbeat uses. See docs/15-llm-control-plane.md for the full contract.
+def _feature_policies(db, service: Service) -> list[dict]:
+    svc_enabled = service_llm_enabled(db, service)
+    features = db.scalars(
+        select(LlmFeature).where(LlmFeature.service_id == service.id).order_by(LlmFeature.feature_key)
+    ).all()
+    return [feature_policy_dict(f, service_enabled=svc_enabled) for f in features]
+
+
+@router.get("/llm/policy")
+def llm_policy(service: Service = Depends(require_service_key), db=Depends(get_db)):
+    """A registered service fetches its allowed AI policy here: the service-level kill switch,
+    every feature it has registered with the providers/models it may use and whether it is
+    enabled, and a monotonic config_version to cache against. No network call belongs in the
+    request path -- a service polls this on its heartbeat cycle and caches the result, exactly
+    like the deny-list."""
+    return {
+        "llm_enabled": service_llm_enabled(db, service),
+        "config_version": _config_version(db, service),
+        "poll_after_seconds": _poll_after_seconds(db, service),
+        "features": _feature_policies(db, service),
+    }
+
+
+@router.post("/llm/register")
+def llm_register(
+    payload: dict,
+    request: Request,
+    service: Service = Depends(require_service_key),
+    db=Depends(get_db),
+):
+    """A service declares its AI features so they show up in MM OS governance before they are
+    ever used. Idempotent: re-declaring updates the declared provider/model, never resets the
+    admin's policy or kill switch. Body: {"features": [{"feature_key","name","provider","model"}]}.
+    Returns the current policy so the service can act on it immediately."""
+    clean, dropped = _strip_key_fields(payload if isinstance(payload, dict) else {})
+    features_in = clean.get("features")
+    if isinstance(features_in, dict):
+        features_in = [features_in]
+    if not isinstance(features_in, list):
+        features_in = []
+
+    for spec in features_in:
+        if not isinstance(spec, dict):
+            continue
+        spec_clean, spec_dropped = _strip_key_fields(spec)
+        dropped += [f"features.{k}" for k in spec_dropped]
+        key = spec_clean.get("feature_key") or spec_clean.get("key")
+        if not key:
+            continue
+        get_or_create_feature(
+            db, service, str(key),
+            name=spec_clean.get("name"),
+            provider=spec_clean.get("provider"),
+            model=spec_clean.get("model"),
+        )
+
+    if dropped:
+        audit(
+            db, action="heartbeat.key_rejected", target_type="service",
+            target_id=str(service.id), service_id=service.id, ip=client_ip(request), fields=dropped,
+        )
+    db.commit()
+    return {
+        "llm_enabled": service_llm_enabled(db, service),
+        "config_version": _config_version(db, service),
+        "features": _feature_policies(db, service),
+    }
+
+
+@router.post("/llm/usage")
+def llm_usage(
+    payload: dict,
+    request: Request,
+    service: Service = Depends(require_service_key),
+    db=Depends(get_db),
+):
+    """A service reports usage for one feature. Auto-registers the feature if MM OS has never
+    seen it (so nothing is ever metered invisibly). Body:
+    {"feature_key","name?","provider?","model?","requests","input_tokens","output_tokens","day?"}.
+    Returns the effective enablement for that feature so the caller can honour a kill switch on
+    its next call without a separate policy fetch."""
+    clean, dropped = _strip_key_fields(payload if isinstance(payload, dict) else {})
+    key = clean.get("feature_key") or clean.get("key")
+    if not key:
+        db.rollback()
+        return {"error": "feature_key_required"}
+
+    feature, _created = get_or_create_feature(
+        db, service, str(key),
+        name=clean.get("name"), provider=clean.get("provider"), model=clean.get("model"),
+    )
+
+    day = None
+    if clean.get("day"):
+        try:
+            day = date.fromisoformat(clean["day"])
+        except (ValueError, TypeError):
+            day = None
+    record_feature_usage(
+        db, feature,
+        requests=int(clean.get("requests") or 0),
+        input_tokens=int(clean.get("input_tokens") or 0),
+        output_tokens=int(clean.get("output_tokens") or 0),
+        day=day,
+    )
+
+    if dropped:
+        audit(
+            db, action="heartbeat.key_rejected", target_type="service",
+            target_id=str(service.id), service_id=service.id, ip=client_ip(request), fields=dropped,
+        )
+    db.commit()
+    svc_enabled = service_llm_enabled(db, service)
+    return {
+        "llm_enabled": svc_enabled,
+        "feature_enabled": bool(svc_enabled and feature.enabled),
+        "config_version": _config_version(db, service),
+    }
+
+
 @router.get("/org/chain")
 def org_chain(
     sub: str = Query(...),
@@ -283,11 +423,20 @@ def purge_expired_revocations(db) -> int:
 
 
 def _purge_loop() -> None:
+    from ..ratelimit import purge_expired_rate_limits
+
     while True:
         time.sleep(3600)
         try:
             with SessionLocal() as db:
                 purge_expired_revocations(db)
+        except Exception:
+            pass
+        # Shared rate-limit counters accumulate one dead row per active identity per minute
+        # once its window passes; sweep them on the same hourly cycle as revocations.
+        try:
+            with SessionLocal() as db:
+                purge_expired_rate_limits(db)
         except Exception:
             pass
 

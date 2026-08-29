@@ -65,11 +65,12 @@ services:
           echo "[boot] seeding from the committed demo fixture (idempotent)"
           python -m app.seed --demo || echo "[boot] seed reported a problem; starting the API anyway"
         fi
-        echo "[boot] starting uvicorn (single worker — see below)"
-        # --workers 1 is REQUIRED (BE-6): the rate limiters and the deny-list are in-process,
-        # in-memory state; a second worker silently N-times-weakens every limit and splits the
-        # deny-list. See docs/10-runbook.md §16. Do not raise without a shared store (Redis).
-        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips='*'
+        echo "[boot] starting uvicorn"
+        # Horizontal scaling is now SAFE (BE-6): the rate-limit state that forced `--workers 1`
+        # is shared across all workers/replicas via the `rate_limits` table in Postgres
+        # (app/ratelimit.py). Left at uvicorn's default (1 worker); raising --workers or adding
+        # replicas is no longer forbidden. See docs/10-runbook.md §16.
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
     expose:
       - "8000"
     healthcheck:

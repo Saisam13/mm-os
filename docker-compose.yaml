@@ -70,7 +70,11 @@ services:
           python -m app.seed --demo || echo "[boot] seed reported a problem; starting the API anyway"
         fi
         echo "[boot] starting uvicorn"
-        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*' 
+        # Horizontal scaling is now SAFE (BE-6): the rate-limit state that once forced
+        # `--workers 1` is shared across all workers/replicas via the `rate_limits` table in
+        # Postgres (app/ratelimit.py). Left at uvicorn's default (1 worker); raising --workers
+        # or adding replicas is no longer forbidden. See docs/10-runbook.md §16.
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
     expose:
       - "8000"
     healthcheck:

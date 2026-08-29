@@ -9,7 +9,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer,
+    BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer,
     Numeric, String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -263,6 +263,41 @@ class LlmUsageDaily(Base):
     output_tokens: Mapped[int] = mapped_column(Numeric(20, 0), default=0, nullable=False)
 
     __table_args__ = (UniqueConstraint("service_id", "day", name="uq_usage_service_day"),)
+
+
+# ── shared rate-limit counters (multi-worker-safe) ────────────────────────
+class RateLimit(Base):
+    """Fixed-window counters shared across every worker/replica through the one Postgres.
+
+    Added for the L1/L2 phase (28 Aug 2026): the PIN-login and service-token limiters were
+    in-process deques (routers/auth.py, routers/tokens.py), so with more than one uvicorn
+    worker each process kept its own budget and every limit silently became N times more
+    permissive -- which is why the deployment was pinned to `--workers 1`. Moving the counter
+    into a table shared by all workers makes horizontal scaling safe: one budget, one DB.
+
+    One row per (bucket, window_key). `bucket` is the throttled identity, namespaced by limiter
+    -- e.g. "pin:<ip>" or "token:<user_id>". `window_key` is the fixed 60-second window index
+    (epoch_seconds // window_seconds), so a whole window's hits share a single row that is
+    incremented in place -- the "don't write-amplify under attack" property the in-memory
+    version had: an over-budget caller never writes anything at all (see app/ratelimit.py).
+
+    The window is coarse-grained on purpose (a plain integer bucket, not a per-hit timestamp
+    row) so the table can never grow faster than one row per active identity per minute, and
+    old windows are purged by app/routers/agent.py's existing hourly purge loop.
+    """
+
+    __tablename__ = "rate_limits"
+
+    id: Mapped[uuid.UUID] = _pk()
+    bucket: Mapped[str] = mapped_column(String(96), nullable=False)
+    window_key: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        UniqueConstraint("bucket", "window_key", name="uq_rate_limit_bucket_window"),
+        Index("ix_rate_limits_window", "window_key"),
+    )
 
 
 # ── audit ─────────────────────────────────────────────────────────────────

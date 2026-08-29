@@ -23,6 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.config import settings  # noqa: E402
 from app.models import Base  # noqa: E402
 
+# Import the modules that define additional tables on the same Base (L1/L2 phase, migration
+# 0002) so `target_metadata` is complete and `alembic check` sees no phantom drift.
+import app.llm_control  # noqa: E402,F401
+import app.provision  # noqa: E402,F401
+
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

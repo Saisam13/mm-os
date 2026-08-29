@@ -17,14 +17,12 @@ if [ "${MMOS_SEED_ON_BOOT:-false}" = "true" ]; then
   python -m app.seed --demo || echo "[boot] seed failed; starting the API anyway so the cause is visible in /healthz"
 fi
 
-echo "[boot] starting uvicorn (single worker — see below)"
-# --workers 1 is REQUIRED, not incidental (BE-6). MM OS's rate limiters
-# (POST /api/token/service, POST /api/auth/pin — 60/min each) and every mmos-client-py
-# service's revocation deny-list are IN-PROCESS, IN-MEMORY state. With more than one worker
-# each process keeps its own counters and its own deny-list, so every limit silently becomes
-# N times more permissive and a revocation honored by one worker is ignored by the others —
-# with no error and no test that would catch it. A single worker is a correct, deliberate
-# posture for ~73 employees this phase; scaling past it needs a shared store (Redis) first.
-# See docs/10-runbook.md §16 and docs/11-security-review.md finding #3. Do NOT raise this
-# number without doing that work.
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips='*'
+echo "[boot] starting uvicorn"
+# Horizontal scaling is now SAFE (BE-6, L1/L2 phase). The rate limiters (POST /api/token/service,
+# POST /api/auth/pin — 60/min each) used to be in-process, in-memory deques, which is why this was
+# pinned to `--workers 1`: a second worker kept its own counters and every limit silently became N
+# times more permissive. That state now lives in the shared `rate_limits` table in Postgres
+# (app/ratelimit.py), so all workers/replicas share one budget. We leave uvicorn at its default
+# (1 worker) here, but raising `--workers` or running multiple replicas is no longer forbidden.
+# See docs/10-runbook.md §16.
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'

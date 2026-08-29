@@ -60,6 +60,11 @@ def match(rows: list[str], user: CurrentUser = Depends(require_role("admin"))):
 request path. `report_usage` accumulates in memory and ships with the next heartbeat, so
 losing MM OS costs you counters, never requests.
 
+For the full per-feature contract — how a service fetches its allowed AI policy
+(providers/models + kill switch + a `config_version` to poll) and reports per-feature usage,
+and the hard boundary that **provider API keys stay in the service and MM OS holds none** —
+see **[docs/15 · LLM control plane](15-llm-control-plane.md)**.
+
 ## Frontend
 
 ```html

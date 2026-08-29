@@ -17,6 +17,12 @@ from sqlalchemy.orm import Session as OrmSession
 from ..config import settings
 from ..db import get_db
 from ..deps import audit, client_ip, require_admin
+from ..llm_control import (
+    LlmFeature,
+    LlmFeatureUsageDaily,
+    get_or_create_feature,
+    service_llm_enabled,
+)
 from ..models import (
     AuditLog,
     Employee,
@@ -98,6 +104,19 @@ class GrantBulk(BaseModel):
 
 class LlmToggle(BaseModel):
     enabled: bool
+    reason: str | None = None
+
+
+class LlmFeatureToggle(BaseModel):
+    enabled: bool
+    reason: str | None = None
+
+
+class LlmFeaturePolicy(BaseModel):
+    allowed_providers: list[str] | None = None
+    allowed_models: list[str] | None = None
+    provider: str | None = None
+    model: str | None = None
     reason: str | None = None
 
 
@@ -542,6 +561,170 @@ def toggle_llm(
     )
     db.commit()
     return {"enabled": reg.enabled, "config_version": _config_version(db, service)}
+
+
+# ── LLM control plane: per-feature governance (INT-5) ────────────────────────────
+def _feature_out(db: OrmSession, feature: LlmFeature, *, service_enabled: bool) -> dict:
+    cutoff = date.today() - timedelta(days=30)
+    usage = db.scalars(
+        select(LlmFeatureUsageDaily)
+        .where(LlmFeatureUsageDaily.feature_id == feature.id, LlmFeatureUsageDaily.day >= cutoff)
+        .order_by(LlmFeatureUsageDaily.day)
+    ).all()
+    return {
+        "feature_key": feature.feature_key,
+        "name": feature.name,
+        "provider": feature.provider,
+        "model": feature.model,
+        "allowed_providers": list(feature.allowed_providers or []),
+        "allowed_models": list(feature.allowed_models or []),
+        "feature_enabled": feature.enabled,
+        # Effective = service kill switch AND feature kill switch; what the service actually sees.
+        "enabled": bool(service_enabled and feature.enabled),
+        "disabled_reason": feature.disabled_reason,
+        "last_seen_at": feature.last_seen_at.isoformat() if feature.last_seen_at else None,
+        "usage_30d": [
+            {
+                "day": u.day.isoformat(),
+                "requests": u.requests,
+                "input_tokens": int(u.input_tokens),
+                "output_tokens": int(u.output_tokens),
+            }
+            for u in usage
+        ],
+    }
+
+
+def _service_or_404(db: OrmSession, slug: str) -> Service:
+    service = db.scalar(select(Service).where(Service.slug == slug))
+    if service is None:
+        raise HTTPException(404, detail={"error": "service_not_found"})
+    return service
+
+
+def _feature_or_404(db: OrmSession, service: Service, feature_key: str) -> LlmFeature:
+    feature = db.scalar(
+        select(LlmFeature).where(
+            LlmFeature.service_id == service.id, LlmFeature.feature_key == feature_key
+        )
+    )
+    if feature is None:
+        raise HTTPException(404, detail={"error": "llm_feature_not_found"})
+    return feature
+
+
+@router.get("/llm/features")
+def list_all_features(admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)):
+    """Every AI feature across every service, with its policy and 30-day usage -- the central
+    view of everything AI that runs anywhere in the platform."""
+    features = db.scalars(select(LlmFeature)).all()
+    svc_enabled: dict = {}
+    out = []
+    for f in features:
+        service = db.get(Service, f.service_id)
+        if service is None:
+            continue
+        if service.id not in svc_enabled:
+            svc_enabled[service.id] = service_llm_enabled(db, service)
+        row = _feature_out(db, f, service_enabled=svc_enabled[service.id])
+        row["slug"] = service.slug
+        row["service_name"] = service.name
+        out.append(row)
+    return {"features": out}
+
+
+@router.get("/llm/{slug}/features")
+def list_service_features(
+    slug: str, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+):
+    service = _service_or_404(db, slug)
+    svc_enabled = service_llm_enabled(db, service)
+    features = db.scalars(
+        select(LlmFeature).where(LlmFeature.service_id == service.id).order_by(LlmFeature.feature_key)
+    ).all()
+    return {
+        "slug": service.slug,
+        "name": service.name,
+        "llm_enabled": svc_enabled,
+        "features": [_feature_out(db, f, service_enabled=svc_enabled) for f in features],
+    }
+
+
+@router.post("/llm/{slug}/features/{feature_key}/toggle")
+def toggle_feature(
+    slug: str,
+    feature_key: str,
+    body: LlmFeatureToggle,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: OrmSession = Depends(get_db),
+):
+    """Per-feature kill switch. Independent of the service-level toggle -- the effective state
+    a service sees is the AND of the two, so IT can kill one feature without touching the
+    others."""
+    service = _service_or_404(db, slug)
+    feature = _feature_or_404(db, service, feature_key)
+    feature.enabled = body.enabled
+    if body.enabled:
+        feature.disabled_by = None
+        feature.disabled_at = None
+        feature.disabled_reason = None
+    else:
+        feature.disabled_by = admin.id
+        feature.disabled_at = datetime.now(timezone.utc)
+        feature.disabled_reason = body.reason
+    action = "llm.feature.enable" if body.enabled else "llm.feature.disable"
+    audit(
+        db, action=action, actor_user_id=admin.id, target_type="llm_feature",
+        target_id=str(feature.id), service_id=service.id, ip=client_ip(request),
+        feature_key=feature_key, reason=body.reason,
+    )
+    db.commit()
+    return {
+        "feature_key": feature.feature_key,
+        "feature_enabled": feature.enabled,
+        "enabled": bool(service_llm_enabled(db, service) and feature.enabled),
+        "config_version": _config_version(db, service),
+    }
+
+
+@router.post("/llm/{slug}/features/{feature_key}/policy")
+def set_feature_policy(
+    slug: str,
+    feature_key: str,
+    body: LlmFeaturePolicy,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: OrmSession = Depends(get_db),
+):
+    """Set the provider/model policy for one feature: the allowlist of providers/models it may
+    use (empty list = unrestricted), and optionally pin the default provider/model. Auto-creates
+    the feature row if an admin sets policy ahead of the service ever reporting it."""
+    service = _service_or_404(db, slug)
+    feature, _created = get_or_create_feature(db, service, feature_key)
+    if body.allowed_providers is not None:
+        feature.allowed_providers = list(body.allowed_providers)
+    if body.allowed_models is not None:
+        feature.allowed_models = list(body.allowed_models)
+    if body.provider is not None:
+        feature.provider = body.provider or None
+    if body.model is not None:
+        feature.model = body.model or None
+    audit(
+        db, action="llm.feature.policy", actor_user_id=admin.id, target_type="llm_feature",
+        target_id=str(feature.id), service_id=service.id, ip=client_ip(request),
+        feature_key=feature_key,
+        allowed_providers=body.allowed_providers, allowed_models=body.allowed_models,
+    )
+    db.commit()
+    return {
+        "feature_key": feature.feature_key,
+        "allowed_providers": list(feature.allowed_providers or []),
+        "allowed_models": list(feature.allowed_models or []),
+        "provider": feature.provider,
+        "model": feature.model,
+        "config_version": _config_version(db, service),
+    }
 
 
 # ── audit log ──────────────────────────────────────────────────────────────────

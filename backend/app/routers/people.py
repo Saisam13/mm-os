@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as OrmSession
 from ..db import get_db
 from ..deps import audit, client_ip, require_admin
 from ..models import Employee, Revocation, Session, User
+from ..provision import provision_by_code
 from ..seed import apply_diff, compute_diff, load_sheet_rows
 from ..security import hash_pin
 
@@ -299,3 +300,52 @@ def set_user_pin(user_id: str, body: dict | None = None, request: Request = None
     audit(db, action="user.pin_set", actor_user_id=admin.id, target_type="user", target_id=user.id, ip=ip)
     db.commit()
     return {"pin": pin}
+
+
+# ── real-person provisioning ───────────────────────────────────────────────────
+@router.post("/provision")
+def provision_people(
+    body: dict, request: Request, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+):
+    """Provision specific named employees (by code) with a real ONE-TIME PIN they must change
+    on first login. This is how IT brings real staff online for the actual rollout, replacing
+    the demo seed. It works on people already imported (via the sheet importer); it never reads
+    a spreadsheet and never carries a name in its request -- only employee codes.
+
+    Body: {"employee_codes": ["MM05", ...], "pin_length": 6, "platform_admin": false}. Each PIN is
+    returned ONCE, in the response, and is never retrievable again -- hand each to its person
+    directly. A code with no MM OS login yet is reported under `skipped`, not silently dropped.
+
+    `platform_admin: true` provisions the management layer: the listed people get the EXACT same
+    full IT-admin-equivalent access as the itadmin layer (act + approve + see everything), not a
+    view-only role -- an explicit owner decision (28 Aug 2026) that deliberately gives heads
+    IT-level power. See provision.provision_by_code for how this satisfies the no_pin_admins
+    CHECK (admins authenticate as google + keep a one-time PIN)."""
+    codes = body.get("employee_codes") or body.get("codes") or []
+    if isinstance(codes, str):
+        codes = [codes]
+    if not isinstance(codes, list) or not codes:
+        raise HTTPException(422, {"error": "no_codes", "message": "Provide employee_codes: a non-empty list."})
+    length = int(body.get("pin_length") or 6)
+    platform_admin = bool(body.get("platform_admin"))
+
+    ip = client_ip(request)
+    provisioned: list[dict] = []
+    skipped: list[dict] = []
+    seen: set[str] = set()
+    for raw in codes:
+        code = str(raw).strip()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        pin, status = provision_by_code(db, code, length=length, platform_admin=platform_admin)
+        if status == "provisioned":
+            provisioned.append({"employee_code": code, "pin": pin, "platform_admin": platform_admin})
+            audit(
+                db, action="user.provision", actor_user_id=admin.id, target_type="employee",
+                target_id=code, ip=ip, platform_admin=platform_admin,
+            )
+        else:
+            skipped.append({"employee_code": code, "reason": status})
+    db.commit()
+    return {"provisioned": provisioned, "skipped": skipped}

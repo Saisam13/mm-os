@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session as OrmSession
 from ..db import get_db
 from ..deps import current_employee, current_user
 from ..models import Employee, Grant, Service, ServiceRole, User
+from ..provision import must_change_pin
 
 router = APIRouter()
 
@@ -94,6 +95,9 @@ def me(
             "band": employee.band,
             "approval_level": employee.approval_level,
             "is_platform_admin": user.is_platform_admin,
+            # True while the person is still on a provisioned one-time PIN -- the shell routes
+            # them to the change-PIN screen (routers/auth.py POST /api/auth/pin/change).
+            "must_change_pin": must_change_pin(db, user),
         },
         "services": services,
         "badges": {

@@ -448,21 +448,23 @@ itself an MM OS audit-log event).
 
 ## 16 · Known limits (read before scaling anything)
 
-- **Single worker is a hard requirement, now pinned explicitly (BE-6).** The rate limiters
-  (`POST /api/token/service` and `POST /api/auth/pin`, 60/min each) **and** every
-  `mmos-client-py` service's revocation deny-list are in-process, in-memory state. With more
-  than one worker or replica, each process keeps its own counters and its own deny-list — so
-  every limit silently becomes N times more permissive, and a revocation one worker has picked
-  up is ignored by the others, all with no error, no warning, and no test that would catch it.
-  This is the single most security-relevant scaling limit in the build. The worker count is now
-  set to `1` **explicitly** at both serving entry points rather than left to uvicorn's default:
-  `deploy/entrypoint.sh` (used by `deploy/Dockerfile` / `deploy/docker-compose.yml`) and the
-  inlined command in `deploy/docker-compose.coolify.yml` both pass `--workers 1` with a comment
-  saying why; `docker-compose.yml` runs exactly one `api` container. A single worker is a
-  correct, deliberate posture for ~73 employees this phase. **Do not raise the worker count, add
-  a replica, or put a second `api` container behind the same proxy until there is a shared store
-  (Redis) for the rate-limit counters and deny-list.** See `docs/11-security-review.md`
-  finding #3.
+- **Horizontal scaling is now safe — the `--workers 1` pin has been removed (BE-6, L1/L2 phase).**
+  The rate limiters (`POST /api/token/service` and `POST /api/auth/pin`, 60/min each) used to be
+  in-process, in-memory deques: with more than one worker or replica each process kept its own
+  counters, so every limit silently became N times more permissive. That was the reason MM OS was
+  pinned to a single uvicorn worker. Those counters now live in the shared `rate_limits` table in
+  Postgres (`app/ratelimit.py`) — a fixed-window counter incremented with an atomic conditional
+  `UPDATE`, so N workers share exactly one budget regardless of replica count, and an over-budget
+  caller still writes nothing. MM OS's own revocation deny-list is served straight from the
+  `revocations` table (`GET /api/agent/revocations`), so it was never per-worker either. The
+  serving entry points therefore no longer pass `--workers 1`: `deploy/entrypoint.sh` (used by
+  `deploy/Dockerfile` / `deploy/docker-compose.yml`) and the inlined command in
+  `deploy/docker-compose.coolify.yml` both leave uvicorn at its default (1 worker) but no longer
+  forbid scaling. **You may now raise `--workers` or run multiple `api` replicas behind the same
+  proxy** — the previously required Redis for rate-limit state is no longer a prerequisite, because
+  that state is shared in Postgres. (Note: each `mmos-client-py` *service* still caches its
+  revocation deny-list in-process; that is a per-service concern on the service side, unrelated to
+  MM OS's own worker count.)
 - **Ingress is Traefik-only — no host port is published (BE-7).** `deploy/docker-compose.yml`
   no longer maps `8000:8000` to the host; it uses `expose: 8000` so the container is reachable
   only over the `mmos_internal` compose network, which is what Coolify's Traefik connects to.
