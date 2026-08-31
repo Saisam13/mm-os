@@ -91,6 +91,24 @@ def embed_js():
 
 
 # ── the built shell, served from the same container and port ─────────────
+# SPA fallback (orchestrator fix, live bug): a client-side route like /dashboard or
+# /admin/accounts has no file on disk, so plain StaticFiles(html=True) 404s it on a hard
+# refresh / deep link. Serve index.html for any unmatched non-API path so the React router
+# resolves it. API routes, /healthz, jwks and /embed.js are registered above and matched
+# first, so this only ever catches genuine shell routes and missing assets.
+from starlette.exceptions import HTTPException as _StarletteHTTPException  # noqa: E402
+
+
+class _SPAStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        try:
+            return await super().get_response(path, scope)
+        except _StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
+
+
 DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if DIST.exists():
-    app.mount("/", StaticFiles(directory=DIST, html=True), name="shell")
+    app.mount("/", _SPAStaticFiles(directory=DIST, html=True), name="shell")
