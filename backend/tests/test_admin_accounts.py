@@ -34,11 +34,22 @@ def test_create_account_makes_functional_account_with_one_time_pin(db, client, m
     assert acct["label"] == "Central Stores"  # derived from mailbox local-part
     assert acct["is_platform_admin"] is False
     assert acct["must_change_pin"] is True
+    assert acct["is_active"] is False  # disabled by default -- IT enables after review
 
     emp = db.scalar(select(Employee).where(Employee.work_email == "central.stores@example.test"))
     assert emp is not None and emp.job_title == "Functional Mailbox"
     user = db.scalar(select(User).where(User.employee_id == emp.id))
     assert must_change_pin(db, user) is True
+    assert user.is_active is False
+
+
+def test_create_account_with_active_true_creates_enabled(db, client, make_user, sign_in):
+    _admin(make_user, sign_in)
+    r = client.post("/api/admin/accounts", json={
+        "email": "enabled.desk@example.test", "department": "Sales", "active": True,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["account"]["is_active"] is True
 
 
 def test_create_account_is_idempotent_on_email(db, client, make_user, sign_in):
@@ -72,6 +83,8 @@ def test_bulk_dry_run_writes_nothing_then_commit_applies(db, client, make_user, 
     assert dry.json()["dry_run"] is True
     assert dry.json()["would_create"] == 2
     assert "pins" not in dry.json()
+    # The preview shows accounts will be created disabled (default active=False).
+    assert all(r["active"] is False for r in dry.json()["rows"])
     # Nothing written.
     assert db.scalar(select(Employee).where(Employee.employee_code == "FN-A")) is None
 
@@ -82,12 +95,46 @@ def test_bulk_dry_run_writes_nothing_then_commit_applies(db, client, make_user, 
     assert len(commit.json()["pins"]) == 2
     assert db.scalar(select(Employee).where(Employee.employee_code == "FN-A")) is not None
 
+    # Disabled by default -- IT reviews and enables each mailbox afterward.
+    emp_a = db.scalar(select(Employee).where(Employee.employee_code == "FN-A"))
+    user_a = db.scalar(select(User).where(User.employee_id == emp_a.id))
+    assert user_a.is_active is False
+
     # FN-B was flagged platform_admin: satisfies no_pin_admins (google auth, keeps a PIN).
     emp_b = db.scalar(select(Employee).where(Employee.employee_code == "FN-B"))
     user_b = db.scalar(select(User).where(User.employee_id == emp_b.id))
     assert user_b.is_platform_admin is True
     assert user_b.auth_type == "google"
     assert user_b.login_email == "qa.line1@example.test"
+    assert user_b.is_active is False  # disabled-by-default applies to heads too
+
+
+def test_bulk_active_true_creates_enabled_accounts(db, client, make_user, sign_in):
+    _admin(make_user, sign_in)
+    rows = [{"employee_code": "FN-EN", "email": "enabled.bulk@example.test", "department": "Sales", "active": True}]
+    commit = client.post("/api/admin/accounts/bulk", json={"rows": rows, "dry_run": False})
+    assert commit.status_code == 200, commit.text
+    emp = db.scalar(select(Employee).where(Employee.employee_code == "FN-EN"))
+    user = db.scalar(select(User).where(User.employee_id == emp.id))
+    assert user.is_active is True
+
+
+def test_bulk_rerun_never_redisables_an_enabled_account(db, client, make_user, sign_in):
+    """The admin enables a bulk-created account in the Accounts page; re-importing the same
+    roster row (still defaulting to active=False) must not disable it again."""
+    _admin(make_user, sign_in)
+    rows = [{"employee_code": "FN-STAY", "email": "stay.enabled@example.test", "department": "Sales"}]
+    client.post("/api/admin/accounts/bulk", json={"rows": rows, "dry_run": False})
+
+    emp = db.scalar(select(Employee).where(Employee.employee_code == "FN-STAY"))
+    user = db.scalar(select(User).where(User.employee_id == emp.id))
+    assert user.is_active is False
+    user.is_active = True
+    db.commit()
+
+    client.post("/api/admin/accounts/bulk", json={"rows": rows, "dry_run": False})
+    db.refresh(user)
+    assert user.is_active is True
 
 
 def test_bulk_commit_is_idempotent(db, client, make_user, sign_in):
@@ -148,10 +195,24 @@ def test_patch_deactivate_revokes_sessions(db, client, make_user, sign_in):
     _admin(make_user, sign_in)
     created = client.post("/api/admin/accounts", json={"email": "temp.desk@example.test", "department": "Temp"})
     account_id = created.json()["account"]["id"]
+    # Newly created accounts are disabled by default; activate first so there is a real
+    # active-to-inactive transition to revoke sessions for.
+    client.patch(f"/api/admin/accounts/{account_id}", json={"is_active": True})
 
     r = client.patch(f"/api/admin/accounts/{account_id}", json={"is_active": False})
     assert r.status_code == 200, r.text
     assert r.json()["is_active"] is False
+
+
+def test_patch_can_enable_a_disabled_account(db, client, make_user, sign_in):
+    _admin(make_user, sign_in)
+    created = client.post("/api/admin/accounts", json={"email": "review.me@example.test", "department": "Ops"})
+    account_id = created.json()["account"]["id"]
+    assert created.json()["account"]["is_active"] is False  # created disabled by default
+
+    r = client.patch(f"/api/admin/accounts/{account_id}", json={"is_active": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["is_active"] is True
 
 
 # ── reset PIN ─────────────────────────────────────────────────────────────────────────

@@ -30,8 +30,9 @@ export interface MmosApi {
     createAccount(payload: {
       email: string; department: string; role?: string
       approval_level?: string | null; platform_admin?: boolean; employee_code?: string
+      active?: boolean
     }): Promise<AccountCreateResult>
-    bulkAccounts(rows: AccountRosterRow[], dryRun: boolean): Promise<AccountBulkResult>
+    bulkAccounts(rows: AccountRosterRow[], dryRun: boolean, active?: boolean): Promise<AccountBulkResult>
     resetAccountPin(id: string): Promise<string>
     updateAccount(id: string, patch: {
       approval_level?: string | null; platform_admin?: boolean; is_active?: boolean

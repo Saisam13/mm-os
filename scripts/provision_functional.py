@@ -43,6 +43,15 @@ line for the admin to action through the existing POST /api/admin/grants /
 POST /api/admin/grants/bulk endpoints (backend/app/routers/platform.py) once they decide which
 service each functional mailbox actually needs.
 
+Disabled-by-default note: every account this loader CREATES starts with is_active=False
+(User.is_active) -- IT reviews the roster in the admin Accounts page and enables each mailbox
+by hand before anyone can sign in with it (see app/deps.py's current_user, which refuses a
+sign-in for an inactive user regardless of a valid PIN/session). Pass --active to create
+accounts already enabled instead. Re-running is still safe either way: `active` is only ever
+applied when a NEW account is created here -- an account that already exists (and that an
+admin may have since enabled) is never re-disabled by a later run, with or without --active
+(see app/provision.py's _ensure_functional_user).
+
 Auth type note: a new account defaults to auth_type='google' with login_email=the roster's
 login_email (unlike app/seed.py's apply_diff, which defaults personal-employee imports to
 local_pin) -- these mailboxes are real corporate addresses, not shared shop-floor terminals.
@@ -130,7 +139,9 @@ def load_roster(path: str | Path) -> list[RosterRow]:
     return rows
 
 
-def process_row(db, row: RosterRow, *, commit: bool, reset: bool, pin_length: int) -> RowResult:
+def process_row(
+    db, row: RosterRow, *, commit: bool, reset: bool, pin_length: int, active: bool = False
+) -> RowResult:
     """Provision one roster row through the shared core (app/provision.provision_account)."""
     return provision_account(
         db,
@@ -140,21 +151,27 @@ def process_row(db, row: RosterRow, *, commit: bool, reset: bool, pin_length: in
         role=row.role,
         approval_level=row.approval_level,
         platform_admin=row.platform_admin,
+        active=active,
         commit=commit,
         reset=reset,
         pin_length=pin_length,
     )
 
 
-def _print_report(results: list[RowResult], *, commit: bool) -> None:
+def _print_report(results: list[RowResult], *, commit: bool, active: bool) -> None:
     verb = "DID" if commit else "WOULD DO (dry run -- nothing written)"
     print(f"\n{'=' * 78}\n{verb}\n{'=' * 78}")
+    state = "ENABLED" if active else "DISABLED (review + enable each in the admin Accounts page)"
+    print(f"New accounts are created {state}.")
     for r in results:
         admin_tag = " [platform admin]" if r.platform_admin else ""
         pin_tag = f"  PIN {r.pin}" if r.pin else ""
+        new_tag = ""
+        if r.employee_action in ("created", "would_create"):
+            new_tag = "  [disabled]" if not active else "  [enabled]"
         print(
             f"  {r.employee_code:<14} {r.login_email:<32} employee={r.employee_action:<13} "
-            f"user={r.user_action:<12}{admin_tag}{pin_tag}"
+            f"user={r.user_action:<12}{admin_tag}{pin_tag}{new_tag}"
         )
     print("=" * 78)
 
@@ -189,6 +206,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Also reissue a one-time PIN for accounts that already have one. Default: an "
              "already-issued PIN is left alone (idempotent re-run).",
     )
+    parser.add_argument(
+        "--active", action="store_true",
+        help="Create new accounts already ENABLED. Default: new accounts are created DISABLED "
+             "(is_active=False) so IT reviews and enables each one in the admin Accounts page "
+             "before anyone can sign in. Never re-enables or re-disables an account that "
+             "already exists -- see app/provision.py.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -202,18 +226,21 @@ def main(argv: list[str] | None = None) -> int:
     db = SessionLocal()
     try:
         results = [
-            process_row(db, row, commit=args.commit, reset=args.reset, pin_length=args.pin_length)
+            process_row(
+                db, row, commit=args.commit, reset=args.reset, pin_length=args.pin_length,
+                active=args.active,
+            )
             for row in rows
         ]
 
         if not args.commit:
             db.rollback()
-            _print_report(results, commit=False)
+            _print_report(results, commit=False, active=args.active)
             print("\nDry run -- nothing written, no PIN issued. Re-run with --commit to apply.")
             return 0
 
         db.commit()
-        _print_report(results, commit=True)
+        _print_report(results, commit=True, active=args.active)
         if args.out:
             _write_pins_csv(args.out, results)
             print(f"\nWrote PIN handout to {args.out!r}.")

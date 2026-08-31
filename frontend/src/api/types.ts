@@ -126,6 +126,7 @@ export interface AccountRosterRow {
   role?: string
   approval_level?: string | null
   platform_admin?: boolean
+  active?: boolean
 }
 
 export interface AccountBulkRow {
@@ -135,6 +136,7 @@ export interface AccountBulkRow {
   user_action: string
   platform_admin: boolean
   approval_level: string | null
+  active: boolean
 }
 
 export interface AccountBulkPin {

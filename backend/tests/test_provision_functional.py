@@ -65,7 +65,7 @@ def test_commit_creates_account_with_must_change_pin(db, tmp_path):
     path = _write_roster(tmp_path, "FN11,central.stores@example.test,Central Stores,requester,,\n")
     row = load_roster(path)[0]
 
-    result = process_row(db, row, commit=True, reset=False, pin_length=6)
+    result = process_row(db, row, commit=True, reset=False, pin_length=6, active=False)
     db.commit()
 
     assert result.employee_action == "created"
@@ -82,7 +82,56 @@ def test_commit_creates_account_with_must_change_pin(db, tmp_path):
     user = db.scalar(select(User).where(User.employee_id == emp.id))
     assert user is not None
     assert user.is_platform_admin is False
+    assert user.is_active is False  # new accounts are disabled by default -- IT enables on review
     assert must_change_pin(db, user) is True
+
+
+# ── loader defaults new accounts to DISABLED; --active creates them enabled ────────────
+def test_loader_defaults_new_account_to_disabled(db, tmp_path):
+    path = _write_roster(tmp_path, "FN20,disabled.default@example.test,Sales,requester,,\n")
+    row = load_roster(path)[0]
+
+    result = process_row(db, row, commit=True, reset=False, pin_length=6, active=False)
+    db.commit()
+
+    assert result.employee_action == "created"
+    emp = db.scalar(select(Employee).where(Employee.employee_code == "FN20"))
+    user = db.scalar(select(User).where(User.employee_id == emp.id))
+    assert user.is_active is False
+
+
+def test_loader_active_flag_creates_enabled_account(db, tmp_path):
+    path = _write_roster(tmp_path, "FN21,enabled.flag@example.test,Sales,requester,,\n")
+    row = load_roster(path)[0]
+
+    result = process_row(db, row, commit=True, reset=False, pin_length=6, active=True)
+    db.commit()
+
+    assert result.employee_action == "created"
+    emp = db.scalar(select(Employee).where(Employee.employee_code == "FN21"))
+    user = db.scalar(select(User).where(User.employee_id == emp.id))
+    assert user.is_active is True
+
+
+def test_rerun_with_default_disabled_never_redisables_an_enabled_account(db, tmp_path):
+    """An admin enables the account after review; re-running the loader (default active=False,
+    i.e. no --active) must not flip it back off."""
+    path = _write_roster(tmp_path, "FN22,stays.enabled@example.test,Sales,requester,,\n")
+    row = load_roster(path)[0]
+
+    process_row(db, row, commit=True, reset=False, pin_length=6, active=False)
+    db.commit()
+
+    emp = db.scalar(select(Employee).where(Employee.employee_code == "FN22"))
+    user = db.scalar(select(User).where(User.employee_id == emp.id))
+    user.is_active = True  # the admin enabled it in the Accounts page
+    db.commit()
+
+    process_row(db, row, commit=True, reset=False, pin_length=6, active=False)
+    db.commit()
+
+    db.refresh(user)
+    assert user.is_active is True
 
 
 # ── blank approval_level / platform_admin stay unset, never defaulted ──────────────────
@@ -119,6 +168,32 @@ def test_truthy_platform_admin_grants_admin_without_tripping_no_pin_admins(db, t
     assert user.auth_type == "google"
     assert user.login_email == "central.stores@example.test"
     assert must_change_pin(db, user) is True
+    assert user.is_active is False  # disabled-by-default applies to heads too until reviewed
+
+
+# ── guard: a bulk/loader run can never flip an existing platform admin to inactive ─────
+def test_rerun_never_disables_an_existing_platform_admin(db, tmp_path):
+    path = _write_roster(
+        tmp_path, "FN23,head.desk@example.test,Central Stores,approver,L3 (HOD),yes\n"
+    )
+    row = load_roster(path)[0]
+
+    process_row(db, row, commit=True, reset=False, pin_length=6, active=True)
+    db.commit()
+
+    emp = db.scalar(select(Employee).where(Employee.employee_code == "FN23"))
+    user = db.scalar(select(User).where(User.employee_id == emp.id))
+    assert user.is_platform_admin is True
+    assert user.is_active is True
+
+    # Re-running with the (now-default) disabled active=False must not touch this
+    # already-existing platform admin's is_active.
+    process_row(db, row, commit=True, reset=False, pin_length=6, active=False)
+    db.commit()
+
+    db.refresh(user)
+    assert user.is_platform_admin is True
+    assert user.is_active is True
 
 
 # ── re-running is idempotent and never resets an issued PIN without --reset ───────────

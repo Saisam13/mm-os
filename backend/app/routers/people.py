@@ -444,7 +444,12 @@ def create_account(
     mailbox updates it in place. Returns the account plus a one-time PIN the FIRST time a PIN is
     issued (a freshly created account, or when `reset: true`); the PIN is shown once, never
     retrievable again. Blank approval_level / falsey platform_admin never demote an existing
-    account (see app.provision.provision_account)."""
+    account (see app.provision.provision_account).
+
+    New accounts default to `is_active=False` -- review-then-enable is the norm now, so a
+    freshly created mailbox cannot sign in until an admin enables it (here, via PATCH, or in
+    the admin Accounts page). Pass `active: true` to create it already enabled. Re-posting an
+    EXISTING account never changes its is_active either way (see provision_account)."""
     email = (body.get("email") or body.get("login_email") or "").strip()
     if not email:
         raise HTTPException(422, {"error": "missing_email", "message": "email is required."})
@@ -453,6 +458,7 @@ def create_account(
     approval_level = body.get("approval_level")
     approval_level = approval_level.strip() if isinstance(approval_level, str) else None
     platform_admin = bool(body.get("platform_admin"))
+    active = bool(body.get("active"))
     reset = bool(body.get("reset"))
     code = _resolve_code(db, email=email, explicit=(body.get("employee_code") or "").strip() or None)
 
@@ -464,6 +470,7 @@ def create_account(
         role=role,
         approval_level=approval_level or None,
         platform_admin=platform_admin,
+        active=active,
         commit=True,
         reset=reset,
     )
@@ -498,12 +505,18 @@ def bulk_accounts(
     """Bulk create/update functional accounts from parsed roster rows (the frontend parses the
     CSV and sends JSON). `dry_run: true` reports what WOULD change and writes nothing; `dry_run:
     false` applies and returns the one-time PIN list. Each row: {employee_code?, email, department,
-    role?, approval_level?, platform_admin?}."""
+    role?, approval_level?, platform_admin?, active?}.
+
+    New accounts default to `is_active=False` -- IT reviews the import and enables each mailbox
+    in the admin Accounts page. A row (or the whole import) can pass `active: true` to create
+    already enabled instead. An account that already exists is never re-enabled or re-disabled
+    by this endpoint either way (see app.provision.provision_account)."""
     rows = body.get("rows")
     if not isinstance(rows, list) or not rows:
         raise HTTPException(422, {"error": "no_rows", "message": "Provide rows: a non-empty list."})
     dry_run = bool(body.get("dry_run", True))
     reset = bool(body.get("reset"))
+    default_active = bool(body.get("active"))  # whole-import override; a row's own "active" wins
 
     out_rows: list[dict] = []
     pins: list[dict] = []
@@ -528,6 +541,7 @@ def bulk_accounts(
                 role=(raw.get("role") or "requester").strip() or "requester",
                 approval_level=approval or None,
                 platform_admin=bool(raw.get("platform_admin")),
+                active=bool(raw["active"]) if "active" in raw else default_active,
                 commit=not dry_run,
                 reset=reset,
             )
@@ -544,6 +558,7 @@ def bulk_accounts(
                 "user_action": result.user_action,
                 "platform_admin": result.platform_admin,
                 "approval_level": result.approval_level,
+                "active": result.active,
             })
             if result.pin:
                 pins.append({

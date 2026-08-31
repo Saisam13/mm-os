@@ -75,7 +75,7 @@ export function AccountsPage() {
                       <td className="tight cond">{a.approval_level ?? '—'}</td>
                       <td className="tight">{a.is_platform_admin ? <span className="chip pet">head</span> : <span className="muted">—</span>}</td>
                       <td className="tight">
-                        <span className={`chip${a.is_active ? ' pet' : ''}`}>{a.is_active ? 'active' : 'deactivated'}</span>
+                        <span className={`chip${a.is_active ? ' pet' : ' wn'}`}>{a.is_active ? 'active' : 'disabled'}</span>
                         {a.must_change_pin ? <span className="chip wn" style={{ marginLeft: 6 }}>PIN pending</span> : null}
                       </td>
                     </tr>
@@ -206,7 +206,10 @@ function AccountDrawer({
       {account.is_active ? (
         <button className="btn-q btn-danger" disabled={busy} onClick={() => setConfirmActive(true)}>Deactivate account</button>
       ) : (
-        <button className="btn-q" disabled={busy} onClick={() => patch({ is_active: true }, 'Account reactivated.')}>Reactivate account</button>
+        <>
+          <span className="chip wn" style={{ marginBottom: 8, display: 'inline-block' }}>Disabled — nobody can sign in until enabled</span>
+          <div><button className="btn-act" disabled={busy} onClick={() => patch({ is_active: true }, 'Account enabled.')}>Enable account</button></div>
+        </>
       )}
 
       {confirmActive ? (
@@ -230,6 +233,7 @@ function AddAccountDialog({ onCancel, onDone }: { onCancel: () => void; onDone: 
   const [role, setRole] = useState('requester')
   const [approval, setApproval] = useState('')
   const [head, setHead] = useState(false)
+  const [enableNow, setEnableNow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [pin, setPin] = useState<string | null>(null)
@@ -241,7 +245,7 @@ function AddAccountDialog({ onCancel, onDone }: { onCancel: () => void; onDone: 
     try {
       const res = await mmosApi.admin.createAccount({
         email: email.trim(), department: department.trim(), role: role.trim() || 'requester',
-        approval_level: approval.trim() || null, platform_admin: head,
+        approval_level: approval.trim() || null, platform_admin: head, active: enableNow,
       })
       setPin(res.pin)
       if (!res.pin) onDone() // no PIN issued (already existed) — nothing to show
@@ -258,7 +262,10 @@ function AddAccountDialog({ onCancel, onDone }: { onCancel: () => void; onDone: 
         <h2>Add account</h2>
         {pin ? (
           <>
-            <p className="muted" style={{ fontSize: 13 }}>Account created for <strong>{email}</strong>.</p>
+            <p className="muted" style={{ fontSize: 13 }}>
+              Account created for <strong>{email}</strong>.{' '}
+              {enableNow ? 'Enabled — it can sign in now.' : 'Disabled — enable it from the account row when you\'re ready.'}
+            </p>
             <PinReveal pin={pin} />
             <div className="row-actions" style={{ marginTop: 12 }}><button className="btn-act" onClick={onDone}>Done</button></div>
           </>
@@ -285,6 +292,13 @@ function AddAccountDialog({ onCancel, onDone }: { onCancel: () => void; onDone: 
               <input type="checkbox" checked={head} onChange={(e) => setHead(e.target.checked)} />
               Management head (full IT-admin-equivalent access)
             </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 4px', fontSize: 13 }}>
+              <input type="checkbox" checked={enableNow} onChange={(e) => setEnableNow(e.target.checked)} />
+              Enable immediately
+            </label>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+              {enableNow ? 'Created enabled — it can sign in right away.' : 'Off by default: the account is created disabled until you enable it.'}
+            </div>
             <div className="row-actions">
               <button type="button" className="btn-q" onClick={onCancel} disabled={busy}>Cancel</button>
               <button type="submit" className="btn-act" disabled={busy}>{busy ? 'Creating…' : 'Create'}</button>
@@ -374,6 +388,11 @@ function BulkImportDialog({ onCancel, onDone }: { onCancel: () => void; onDone: 
             <p className="muted" style={{ fontSize: 13 }}>
               Created {committed.created}, updated {committed.updated}, unchanged {committed.unchanged}.
             </p>
+            {(committed.created ?? 0) > 0 ? (
+              <p className="chip wn" style={{ display: 'inline-block', marginBottom: 8 }}>
+                Disabled — enable each after review
+              </p>
+            ) : null}
             {pins.length > 0 ? (
               <>
                 <div className="eyebrow" style={{ margin: '10px 0 6px', display: 'flex', justifyContent: 'space-between' }}>
@@ -423,9 +442,14 @@ function BulkImportDialog({ onCancel, onDone }: { onCancel: () => void; onDone: 
               <div className="card" style={{ marginTop: 10 }}>
                 <div className="card-h"><div><div className="eyebrow">Dry run · nothing written yet</div><h2>Would create {preview.would_create}, update {preview.would_update}</h2></div></div>
                 <div className="card-b flush">
+                  {preview.would_create ? (
+                    <p className="chip wn" style={{ display: 'inline-block', margin: '0 0 8px' }}>
+                      New accounts are created Disabled — enable each after review
+                    </p>
+                  ) : null}
                   <div className="tw">
                     <table>
-                      <thead><tr><th>Code</th><th>Email</th><th>Employee</th><th>Head</th></tr></thead>
+                      <thead><tr><th>Code</th><th>Email</th><th>Employee</th><th>Head</th><th>Status</th></tr></thead>
                       <tbody>
                         {preview.rows.map((r) => (
                           <tr key={r.employee_code}>
@@ -433,6 +457,11 @@ function BulkImportDialog({ onCancel, onDone }: { onCancel: () => void; onDone: 
                             <td className="tight">{r.email}</td>
                             <td className="tight"><span className={`chip${r.employee_action.includes('creat') ? ' pet' : ''}`}>{r.employee_action.replace('would_', '')}</span></td>
                             <td className="tight">{r.platform_admin ? <span className="chip pet">head</span> : '—'}</td>
+                            <td className="tight">
+                              {r.employee_action.includes('creat')
+                                ? <span className={`chip${r.active ? ' pet' : ' wn'}`}>{r.active ? 'enabled' : 'disabled'}</span>
+                                : <span className="muted">—</span>}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

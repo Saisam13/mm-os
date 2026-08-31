@@ -143,7 +143,7 @@ function mockPin(): string {
 
 function upsertAccount(row: {
   email: string; department: string; role?: string; approval_level?: string | null
-  platform_admin?: boolean; employee_code?: string
+  platform_admin?: boolean; employee_code?: string; active?: boolean
 }, commit: boolean): { account: FunctionalAccount; created: boolean; pin: string | null; employee_action: string; user_action: string } {
   const existing = FUNCTIONAL_ACCOUNTS.find((a) => a.email === row.email || (row.employee_code && a.employee_code === row.employee_code))
   if (existing) {
@@ -155,6 +155,9 @@ function upsertAccount(row: {
       existing.label = label
       if (row.approval_level) existing.approval_level = row.approval_level
       if (row.platform_admin) { existing.is_platform_admin = true; existing.auth_type = 'google' }
+      // `active` is a create-only setting -- an already-existing account's is_active is
+      // never touched here, so re-importing the same row can never silently disable an
+      // account the admin has since enabled (mirrors app/provision.py's contract).
     }
     return { account: existing, created: false, pin: null, employee_action: changed ? (commit ? 'updated' : 'would_update') : 'unchanged', user_action: 'pin_kept' }
   }
@@ -163,7 +166,7 @@ function upsertAccount(row: {
     id: `fa-${++ACCOUNT_SEQ}`, employee_id: `fe-${ACCOUNT_SEQ}`, employee_code: code,
     email: row.email, label: mockLabelFromEmail(row.email), department: row.department,
     approval_level: row.approval_level || null, is_platform_admin: !!row.platform_admin,
-    auth_type: 'google', is_active: true, pin_set: true, must_change_pin: true,
+    auth_type: 'google', is_active: !!row.active, pin_set: true, must_change_pin: true,
   }
   const pin = commit ? mockPin() : null
   if (commit) FUNCTIONAL_ACCOUNTS.push(acct)
@@ -356,7 +359,7 @@ export const mock: MmosApi = {
       const { account, created, pin } = upsertAccount(payload, true)
       return { account: { ...account }, created, pin }
     },
-    async bulkAccounts(rows: AccountRosterRow[], dryRun): Promise<AccountBulkResult> {
+    async bulkAccounts(rows: AccountRosterRow[], dryRun, active): Promise<AccountBulkResult> {
       await delay(300)
       const outRows: AccountBulkResult['rows'] = []
       const pins: NonNullable<AccountBulkResult['pins']> = []
@@ -365,11 +368,12 @@ export const mock: MmosApi = {
       for (const row of rows) {
         if (!row.email || seen.has(row.email)) continue
         seen.add(row.email)
-        const r = upsertAccount({ email: row.email, department: row.department, role: row.role, approval_level: row.approval_level, platform_admin: row.platform_admin, employee_code: row.employee_code }, !dryRun)
+        const rowActive = row.active !== undefined ? row.active : !!active
+        const r = upsertAccount({ email: row.email, department: row.department, role: row.role, approval_level: row.approval_level, platform_admin: row.platform_admin, employee_code: row.employee_code, active: rowActive }, !dryRun)
         if (r.employee_action.includes('creat')) counts.created++
         else if (r.employee_action.includes('updat')) counts.updated++
         else counts.unchanged++
-        outRows.push({ employee_code: r.account.employee_code, email: row.email, employee_action: r.employee_action, user_action: r.user_action, platform_admin: r.account.is_platform_admin, approval_level: r.account.approval_level })
+        outRows.push({ employee_code: r.account.employee_code, email: row.email, employee_action: r.employee_action, user_action: r.user_action, platform_admin: r.account.is_platform_admin, approval_level: r.account.approval_level, active: rowActive })
         if (r.pin) pins.push({ employee_code: r.account.employee_code, email: row.email, pin: r.pin, platform_admin: r.account.is_platform_admin })
       }
       return dryRun

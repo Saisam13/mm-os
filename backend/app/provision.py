@@ -158,6 +158,10 @@ class AccountResult:
     platform_admin: bool  # applied (commit) or requested (dry run)
     approval_level: str | None = None
     pin: str | None = None
+    active: bool = False  # the is_active a FRESH account was/would be created with (see
+                          # provision_account -- an update never changes an existing account's
+                          # is_active, so this reflects "on creation" only, not the account's
+                          # current live state)
 
 
 def label_from_email(email: str) -> str:
@@ -227,6 +231,7 @@ def _ensure_functional_user(
     *,
     login_email: str,
     platform_admin: bool,
+    active: bool,
     commit: bool,
     reset: bool,
     pin_length: int,
@@ -234,7 +239,14 @@ def _ensure_functional_user(
     """Returns (user_action, pin_or_None). Idempotent: re-running never duplicates a User and
     never resets an already-issued PIN unless `reset=True`. Granting platform_admin flips the
     user to google auth (models.py no_pin_admins forbids a local_pin admin) -- same mechanism
-    as provision_by_code above."""
+    as provision_by_code above.
+
+    `active` sets is_active ONLY on a freshly created User -- an already-existing account's
+    is_active is never touched here (the same "blank/default never clobbers" contract as
+    approval_level/platform_admin above), so re-running the loader/bulk import can never
+    silently disable an account the admin has since reviewed and enabled, and can never flip
+    an existing platform admin to inactive either. Enabling or disabling an EXISTING account
+    is only ever done explicitly, via PATCH /api/admin/accounts/{id} (routers/people.py)."""
     user = None
     if employee is not None:
         user = db.scalar(select(User).where(User.employee_id == employee.id))
@@ -242,7 +254,7 @@ def _ensure_functional_user(
     if user is None:
         if not commit:
             return "would_create", None
-        user = User(employee_id=employee.id, auth_type="google", login_email=login_email)
+        user = User(employee_id=employee.id, auth_type="google", login_email=login_email, is_active=active)
         db.add(user)
         db.flush()
         if platform_admin:
@@ -250,7 +262,7 @@ def _ensure_functional_user(
         pin = issue_one_time_pin(db, user, length=pin_length)
         return "created", pin
 
-    # existing user
+    # existing user -- is_active is deliberately never written here (see docstring above)
     if not commit:
         if platform_admin and not user.is_platform_admin and not (user.login_email or login_email):
             return "would_flag_admin_no_email", None
@@ -281,6 +293,7 @@ def provision_account(
     role: str = DEFAULT_FUNCTIONAL_ROLE,
     approval_level: str | None = None,
     platform_admin: bool = False,
+    active: bool = True,
     commit: bool = True,
     reset: bool = False,
     pin_length: int = 6,
@@ -291,7 +304,13 @@ def provision_account(
     the dry run shows; the caller is responsible for db.rollback()/db.commit() around a batch.
     A one-time must-change PIN is issued for a freshly created user, or reissued when reset=True
     (an already-issued PIN is otherwise left alone). Blank approval_level / falsey platform_admin
-    never demote an existing account."""
+    never demote an existing account.
+
+    `active` sets User.is_active ONLY when a NEW account is created here -- it is never applied
+    to an existing account (see _ensure_functional_user). Kept True as this function's own
+    default so a bare call (e.g. an existing single-account script or test) still creates an
+    enabled account exactly as before; callers that want the review-then-enable norm (the
+    roster loader, the bulk/single admin endpoints) pass active=False explicitly."""
     employee, employee_action = _ensure_functional_employee(
         db,
         employee_code=employee_code,
@@ -306,6 +325,7 @@ def provision_account(
         employee,
         login_email=login_email,
         platform_admin=platform_admin,
+        active=active,
         commit=commit,
         reset=reset,
         pin_length=pin_length,
@@ -322,4 +342,5 @@ def provision_account(
         platform_admin=platform_admin_applied if commit else platform_admin,
         approval_level=approval_level,
         pin=pin,
+        active=active,
     )

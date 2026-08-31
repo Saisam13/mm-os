@@ -103,8 +103,8 @@ export const client: MmosApi = {
       req<{ accounts: any[] }>(`/api/admin/accounts${qs({ dept })}`).then((r) => r.accounts),
     createAccount: (payload) =>
       req('/api/admin/accounts', { method: 'POST', body: JSON.stringify(payload) }),
-    bulkAccounts: (rows, dryRun) =>
-      req('/api/admin/accounts/bulk', { method: 'POST', body: JSON.stringify({ rows, dry_run: dryRun }) }),
+    bulkAccounts: (rows, dryRun, active) =>
+      req('/api/admin/accounts/bulk', { method: 'POST', body: JSON.stringify({ rows, dry_run: dryRun, ...(active !== undefined ? { active } : {}) }) }),
     resetAccountPin: (id) =>
       req<{ pin: string }>(`/api/admin/accounts/${id}/reset-pin`, { method: 'POST' }).then((r) => r.pin),
     updateAccount: (id, patch) =>
