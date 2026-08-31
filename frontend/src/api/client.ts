@@ -99,6 +99,17 @@ export const client: MmosApi = {
         body: JSON.stringify(pin === null ? { clear: true } : { pin }),
       }),
 
+    listAccounts: (dept) =>
+      req<{ accounts: any[] }>(`/api/admin/accounts${qs({ dept })}`).then((r) => r.accounts),
+    createAccount: (payload) =>
+      req('/api/admin/accounts', { method: 'POST', body: JSON.stringify(payload) }),
+    bulkAccounts: (rows, dryRun) =>
+      req('/api/admin/accounts/bulk', { method: 'POST', body: JSON.stringify({ rows, dry_run: dryRun }) }),
+    resetAccountPin: (id) =>
+      req<{ pin: string }>(`/api/admin/accounts/${id}/reset-pin`, { method: 'POST' }).then((r) => r.pin),
+    updateAccount: (id, patch) =>
+      req(`/api/admin/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
     listServices: () => req<{ services: any[] }>('/api/admin/services').then((r) => r.services),
     createService: (payload) => req('/api/admin/services', { method: 'POST', body: JSON.stringify(payload) }),
     updateService: (slug, patch) =>

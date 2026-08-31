@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -15,7 +16,13 @@ from sqlalchemy.orm import Session as OrmSession
 from ..db import get_db
 from ..deps import audit, client_ip, require_admin
 from ..models import Employee, Revocation, Session, User
-from ..provision import provision_by_code
+from ..provision import (
+    FUNCTIONAL_JOB_TITLE,
+    issue_one_time_pin,
+    must_change_pin,
+    provision_account,
+    provision_by_code,
+)
 from ..seed import apply_diff, compute_diff, load_sheet_rows
 from ..security import hash_pin
 
@@ -349,3 +356,309 @@ def provision_people(
             skipped.append({"employee_code": code, "reason": status})
     db.commit()
     return {"provisioned": provisioned, "skipped": skipped}
+
+
+# ── functional-mailbox accounts ────────────────────────────────────────────────
+# The operational "add & customize" surface for the FUNCTIONAL-MAILBOX accounts MM OS now
+# provisions (purchase.c2@, central.stores@, sales@ ...). These endpoints share ONE per-row
+# core with the CLI loader (scripts/provision_functional.py) via app.provision.provision_account
+# so an account created here and one loaded from the roster CSV are byte-for-byte the same.
+# A "functional account" is any Employee whose job_title is FUNCTIONAL_JOB_TITLE.
+
+
+def _account_out(db: OrmSession, u: User, e: Employee) -> dict:
+    return {
+        "id": str(u.id),
+        "employee_id": str(e.id),
+        "employee_code": e.employee_code,
+        "email": u.login_email or e.work_email,
+        "label": e.full_name,
+        "department": e.hr_department,
+        "approval_level": e.approval_level,
+        "is_platform_admin": u.is_platform_admin,
+        "auth_type": u.auth_type,
+        "is_active": u.is_active,
+        "pin_set": bool(u.pin_set_at),
+        "must_change_pin": must_change_pin(db, u),
+    }
+
+
+def _derive_employee_code(db: OrmSession, email: str) -> str:
+    """Derive a unique employee_code (String(16)) for a functional mailbox with no explicit
+    code -- from the mailbox local-part, e.g. "purchase.c2@..." -> "PURCHASE.C2". Adds a short
+    random suffix if that base is already taken by a different account."""
+    local = email.split("@", 1)[0]
+    base = re.sub(r"[^A-Za-z0-9.]", "", local).upper()[:16].strip(".") or "FN"
+    candidate = base
+    while db.scalar(select(Employee).where(Employee.employee_code == candidate)):
+        candidate = (base[:9] + secrets.token_hex(3).upper())[:16]
+    return candidate
+
+
+def _resolve_code(db: OrmSession, *, email: str, explicit: str | None) -> str:
+    """Which employee_code this account keys on: an explicit code wins; otherwise reuse the
+    code of any existing account already on this email (so re-adding the same mailbox updates
+    in place rather than erroring on the unique work_email); otherwise derive a fresh one."""
+    if explicit:
+        return explicit
+    existing = db.scalar(select(Employee).where(Employee.work_email == email))
+    if existing is None:
+        user = db.scalar(select(User).where(User.login_email == email))
+        existing = db.get(Employee, user.employee_id) if user else None
+    return existing.employee_code if existing else _derive_employee_code(db, email)
+
+
+def _account_by_user_id(db: OrmSession, user_id: str) -> tuple[User, Employee]:
+    user = _get_or_404(db, User, user_id, "account_not_found")
+    emp = db.get(Employee, user.employee_id)
+    if emp is None:
+        raise HTTPException(404, {"error": "account_not_found"})
+    return user, emp
+
+
+@router.get("/accounts")
+def list_accounts(
+    dept: str | None = None,
+    admin: User = Depends(require_admin),
+    db: OrmSession = Depends(get_db),
+):
+    """List functional-mailbox accounts (Employee.job_title == FUNCTIONAL_JOB_TITLE), optionally
+    filtered by department. Personal-employee accounts are managed on the People page instead."""
+    stmt = (
+        select(User, Employee)
+        .join(Employee, User.employee_id == Employee.id)
+        .where(Employee.job_title == FUNCTIONAL_JOB_TITLE)
+        .order_by(Employee.hr_department, Employee.employee_code)
+    )
+    if dept:
+        stmt = stmt.where(Employee.hr_department == dept)
+    rows = list(db.execute(stmt))
+    return {"accounts": [_account_out(db, u, e) for u, e in rows]}
+
+
+@router.post("/accounts")
+def create_account(
+    body: dict, request: Request, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+):
+    """Create OR customize one functional account. Idempotent on email: re-posting the same
+    mailbox updates it in place. Returns the account plus a one-time PIN the FIRST time a PIN is
+    issued (a freshly created account, or when `reset: true`); the PIN is shown once, never
+    retrievable again. Blank approval_level / falsey platform_admin never demote an existing
+    account (see app.provision.provision_account)."""
+    email = (body.get("email") or body.get("login_email") or "").strip()
+    if not email:
+        raise HTTPException(422, {"error": "missing_email", "message": "email is required."})
+    department = (body.get("department") or "").strip()
+    role = (body.get("role") or "requester").strip() or "requester"
+    approval_level = body.get("approval_level")
+    approval_level = approval_level.strip() if isinstance(approval_level, str) else None
+    platform_admin = bool(body.get("platform_admin"))
+    reset = bool(body.get("reset"))
+    code = _resolve_code(db, email=email, explicit=(body.get("employee_code") or "").strip() or None)
+
+    result = provision_account(
+        db,
+        employee_code=code,
+        login_email=email,
+        department=department,
+        role=role,
+        approval_level=approval_level or None,
+        platform_admin=platform_admin,
+        commit=True,
+        reset=reset,
+    )
+    if result.user_action == "admin_no_email":
+        db.rollback()
+        raise HTTPException(422, {"error": "admin_no_email", "message": "A management head needs an email to sign in as."})
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, {"error": "account_conflict", "message": "That employee code or email already belongs to another account."})
+
+    emp = db.scalar(select(Employee).where(Employee.employee_code == code))
+    user = db.scalar(select(User).where(User.employee_id == emp.id))
+    audit(
+        db, action="account.provision", actor_user_id=admin.id, target_type="employee",
+        target_id=code, ip=client_ip(request), platform_admin=result.platform_admin,
+        created=result.employee_action in ("created",),
+    )
+    db.commit()
+    return {
+        "account": _account_out(db, user, emp),
+        "pin": result.pin,
+        "created": result.employee_action == "created",
+    }
+
+
+@router.post("/accounts/bulk")
+def bulk_accounts(
+    body: dict, request: Request, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+):
+    """Bulk create/update functional accounts from parsed roster rows (the frontend parses the
+    CSV and sends JSON). `dry_run: true` reports what WOULD change and writes nothing; `dry_run:
+    false` applies and returns the one-time PIN list. Each row: {employee_code?, email, department,
+    role?, approval_level?, platform_admin?}."""
+    rows = body.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise HTTPException(422, {"error": "no_rows", "message": "Provide rows: a non-empty list."})
+    dry_run = bool(body.get("dry_run", True))
+    reset = bool(body.get("reset"))
+
+    out_rows: list[dict] = []
+    pins: list[dict] = []
+    counts = {"created": 0, "updated": 0, "unchanged": 0}
+    seen: set[str] = set()
+    try:
+        for raw in rows:
+            email = (raw.get("email") or raw.get("login_email") or "").strip()
+            if not email:
+                continue
+            code = (raw.get("employee_code") or "").strip() or _resolve_code(db, email=email, explicit=None)
+            if code in seen:
+                continue
+            seen.add(code)
+            approval = raw.get("approval_level")
+            approval = approval.strip() if isinstance(approval, str) else None
+            result = provision_account(
+                db,
+                employee_code=code,
+                login_email=email,
+                department=(raw.get("department") or "").strip(),
+                role=(raw.get("role") or "requester").strip() or "requester",
+                approval_level=approval or None,
+                platform_admin=bool(raw.get("platform_admin")),
+                commit=not dry_run,
+                reset=reset,
+            )
+            if result.employee_action in ("created", "would_create"):
+                counts["created"] += 1
+            elif result.employee_action in ("updated", "would_update"):
+                counts["updated"] += 1
+            else:
+                counts["unchanged"] += 1
+            out_rows.append({
+                "employee_code": result.employee_code,
+                "email": result.login_email,
+                "employee_action": result.employee_action,
+                "user_action": result.user_action,
+                "platform_admin": result.platform_admin,
+                "approval_level": result.approval_level,
+            })
+            if result.pin:
+                pins.append({
+                    "employee_code": result.employee_code,
+                    "email": result.login_email,
+                    "pin": result.pin,
+                    "platform_admin": result.platform_admin,
+                })
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, {"error": "account_conflict", "message": "A row's employee code or email conflicts with an existing account."})
+
+    if dry_run:
+        db.rollback()
+        return {
+            "dry_run": True,
+            "would_create": counts["created"],
+            "would_update": counts["updated"],
+            "unchanged": counts["unchanged"],
+            "rows": out_rows,
+        }
+
+    audit(
+        db, action="account.bulk_provision", actor_user_id=admin.id, target_type="employee",
+        target_id=None, ip=client_ip(request),
+        created=counts["created"], updated=counts["updated"],
+    )
+    db.commit()
+    return {
+        "dry_run": False,
+        "created": counts["created"],
+        "updated": counts["updated"],
+        "unchanged": counts["unchanged"],
+        "rows": out_rows,
+        "pins": pins,
+    }
+
+
+@router.post("/accounts/{account_id}/reset-pin")
+def reset_account_pin(
+    account_id: str, request: Request, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+):
+    """Reissue a one-time must-change PIN for a functional account. Returns the PIN once."""
+    user, _emp = _account_by_user_id(db, account_id)
+    pin = issue_one_time_pin(db, user)
+    audit(
+        db, action="account.reset_pin", actor_user_id=admin.id, target_type="user",
+        target_id=user.id, ip=client_ip(request),
+    )
+    db.commit()
+    return {"pin": pin}
+
+
+@router.patch("/accounts/{account_id}")
+def patch_account(
+    account_id: str, body: dict, request: Request, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+):
+    """Customize one functional account. Only keys present in the body change; an ABSENT key is
+    left untouched. To CLEAR approval_level send it as null or "" explicitly. Toggling
+    platform_admin on satisfies models.py's no_pin_admins CHECK the same way provisioning does
+    (flip to google auth, set login_email)."""
+    user, emp = _account_by_user_id(db, account_id)
+    ip = client_ip(request)
+    now = datetime.now(timezone.utc)
+    changed: list[str] = []
+
+    if "department" in body and body["department"]:
+        emp.hr_department = str(body["department"]).strip()
+        changed.append("department")
+    if "label" in body and body["label"]:
+        emp.full_name = str(body["label"]).strip()
+        changed.append("label")
+
+    if "approval_level" in body:  # present => explicit set/clear (null/"" clears)
+        val = body["approval_level"]
+        emp.approval_level = str(val).strip() if isinstance(val, str) and val.strip() else None
+        changed.append("approval_level")
+
+    if "platform_admin" in body:
+        want = bool(body["platform_admin"])
+        if want and not user.is_platform_admin:
+            email = user.login_email or emp.work_email
+            if not email:
+                raise HTTPException(422, {"error": "admin_no_email", "message": "A management head needs an email to sign in as."})
+            user.login_email = email
+            user.auth_type = "google"  # no_pin_admins: an admin can never be local_pin
+            user.is_platform_admin = True
+        elif not want:
+            user.is_platform_admin = False
+        changed.append("platform_admin")
+
+    if "is_active" in body:
+        new_active = bool(body["is_active"])
+        was_active = user.is_active
+        user.is_active = new_active
+        if was_active and not new_active:
+            for s in db.scalars(
+                select(Session).where(Session.user_id == user.id, Session.revoked_at.is_(None))
+            ):
+                s.revoked_at = now
+            db.add(Revocation(
+                subject=user.subject, service_id=None, reason="user_deactivated",
+                revoked_by=admin.id, purge_after=now + timedelta(hours=2),
+            ))
+        changed.append("is_active")
+
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, {"error": "account_conflict", "message": "That change violates a PIN/admin/email rule."})
+
+    audit(
+        db, action="account.update", actor_user_id=admin.id, target_type="user",
+        target_id=user.id, ip=ip, fields=changed,
+    )
+    db.commit()
+    return _account_out(db, user, emp)

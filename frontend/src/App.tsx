@@ -8,6 +8,7 @@ import { ServiceOpenPage } from './pages/ServiceOpenPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { AdminTabs } from './pages/admin/AdminTabs'
 import { PeoplePage } from './pages/admin/PeoplePage'
+import { AccountsPage } from './pages/admin/AccountsPage'
 import { AccessPage } from './pages/admin/AccessPage'
 import { ServicesAdminPage } from './pages/admin/ServicesAdminPage'
 import { AuditPage } from './pages/admin/AuditPage'
@@ -31,6 +32,7 @@ export function App() {
                 <Route index element={<Navigate to="access" replace />} />
                 <Route path="access" element={<AccessPage />} />
                 <Route path="people" element={<PeoplePage />} />
+                <Route path="accounts" element={<AccountsPage />} />
                 <Route path="services" element={<ServicesAdminPage />} />
                 <Route path="audit" element={<AuditPage />} />
               </Route>

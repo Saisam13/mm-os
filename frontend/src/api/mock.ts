@@ -11,7 +11,8 @@
 // The choice persists in localStorage so it survives navigation and reloads.
 import type { MmosApi } from './contract'
 import type {
-  AdminEmployee, AdminGrant, AdminLlmRow, AdminService, Me, PublicService,
+  AccountBulkResult, AccountCreateResult, AccountRosterRow,
+  AdminEmployee, AdminGrant, AdminLlmRow, AdminService, FunctionalAccount, Me, PublicService,
 } from './types'
 import { ApiRequestError } from './types'
 
@@ -119,6 +120,55 @@ const GRANTS_BY_USER: Record<string, Record<string, string>> = {
 }
 
 const EXPIRES: Record<string, string> = { 'u-32:itemcode': '2026-09-30T00:00:00Z' }
+
+// ── functional-mailbox accounts (dev fixture) ────────────────────────────
+// Seeded with two so the Accounts page isn't empty in the mock; mutated in
+// place by createAccount / bulkAccounts / updateAccount so a demo can add and
+// customize accounts without a backend.
+let ACCOUNT_SEQ = 1
+const FUNCTIONAL_ACCOUNTS: FunctionalAccount[] = [
+  { id: 'fa-1', employee_id: 'fe-1', employee_code: 'PURCHASE.C2', email: 'purchase.c2@m-mines.com', label: 'Purchase C2', department: 'Purchase', approval_level: null, is_platform_admin: false, auth_type: 'google', is_active: true, pin_set: true, must_change_pin: false },
+  { id: 'fa-2', employee_id: 'fe-2', employee_code: 'CENTRAL.STORES', email: 'central.stores@m-mines.com', label: 'Central Stores', department: 'Central Stores', approval_level: 'L3 (HOD)', is_platform_admin: true, auth_type: 'google', is_active: true, pin_set: true, must_change_pin: false },
+]
+
+function mockLabelFromEmail(email: string): string {
+  const local = email.split('@')[0]
+  const words = local.replace(/[._-]/g, ' ').split(' ').filter(Boolean)
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || local
+}
+
+function mockPin(): string {
+  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')
+}
+
+function upsertAccount(row: {
+  email: string; department: string; role?: string; approval_level?: string | null
+  platform_admin?: boolean; employee_code?: string
+}, commit: boolean): { account: FunctionalAccount; created: boolean; pin: string | null; employee_action: string; user_action: string } {
+  const existing = FUNCTIONAL_ACCOUNTS.find((a) => a.email === row.email || (row.employee_code && a.employee_code === row.employee_code))
+  if (existing) {
+    const label = mockLabelFromEmail(row.email)
+    const changed = existing.department !== row.department || existing.label !== label ||
+      (!!row.approval_level && existing.approval_level !== row.approval_level)
+    if (commit) {
+      existing.department = row.department
+      existing.label = label
+      if (row.approval_level) existing.approval_level = row.approval_level
+      if (row.platform_admin) { existing.is_platform_admin = true; existing.auth_type = 'google' }
+    }
+    return { account: existing, created: false, pin: null, employee_action: changed ? (commit ? 'updated' : 'would_update') : 'unchanged', user_action: 'pin_kept' }
+  }
+  const code = row.employee_code || row.email.split('@')[0].toUpperCase().slice(0, 16)
+  const acct: FunctionalAccount = {
+    id: `fa-${++ACCOUNT_SEQ}`, employee_id: `fe-${ACCOUNT_SEQ}`, employee_code: code,
+    email: row.email, label: mockLabelFromEmail(row.email), department: row.department,
+    approval_level: row.approval_level || null, is_platform_admin: !!row.platform_admin,
+    auth_type: 'google', is_active: true, pin_set: true, must_change_pin: true,
+  }
+  const pin = commit ? mockPin() : null
+  if (commit) FUNCTIONAL_ACCOUNTS.push(acct)
+  return { account: acct, created: true, pin, employee_action: commit ? 'created' : 'would_create', user_action: commit ? 'created' : 'would_create' }
+}
 
 function grantsFor(userId: string): AdminGrant[] {
   const g = GRANTS_BY_USER[userId] || {}
@@ -295,6 +345,53 @@ export const mock: MmosApi = {
     },
     async setPin() {
       await delay(200)
+    },
+
+    async listAccounts(dept) {
+      await delay(200)
+      return FUNCTIONAL_ACCOUNTS.filter((a) => !dept || a.department === dept).map((a) => ({ ...a }))
+    },
+    async createAccount(payload): Promise<AccountCreateResult> {
+      await delay(250)
+      const { account, created, pin } = upsertAccount(payload, true)
+      return { account: { ...account }, created, pin }
+    },
+    async bulkAccounts(rows: AccountRosterRow[], dryRun): Promise<AccountBulkResult> {
+      await delay(300)
+      const outRows: AccountBulkResult['rows'] = []
+      const pins: NonNullable<AccountBulkResult['pins']> = []
+      const counts = { created: 0, updated: 0, unchanged: 0 }
+      const seen = new Set<string>()
+      for (const row of rows) {
+        if (!row.email || seen.has(row.email)) continue
+        seen.add(row.email)
+        const r = upsertAccount({ email: row.email, department: row.department, role: row.role, approval_level: row.approval_level, platform_admin: row.platform_admin, employee_code: row.employee_code }, !dryRun)
+        if (r.employee_action.includes('creat')) counts.created++
+        else if (r.employee_action.includes('updat')) counts.updated++
+        else counts.unchanged++
+        outRows.push({ employee_code: r.account.employee_code, email: row.email, employee_action: r.employee_action, user_action: r.user_action, platform_admin: r.account.is_platform_admin, approval_level: r.account.approval_level })
+        if (r.pin) pins.push({ employee_code: r.account.employee_code, email: row.email, pin: r.pin, platform_admin: r.account.is_platform_admin })
+      }
+      return dryRun
+        ? { dry_run: true, would_create: counts.created, would_update: counts.updated, unchanged: counts.unchanged, rows: outRows }
+        : { dry_run: false, created: counts.created, updated: counts.updated, unchanged: counts.unchanged, rows: outRows, pins }
+    },
+    async resetAccountPin(id) {
+      await delay(200)
+      const a = FUNCTIONAL_ACCOUNTS.find((x) => x.id === id)
+      if (a) { a.pin_set = true; a.must_change_pin = true }
+      return mockPin()
+    },
+    async updateAccount(id, patch): Promise<FunctionalAccount> {
+      await delay(200)
+      const a = FUNCTIONAL_ACCOUNTS.find((x) => x.id === id)
+      if (!a) throw new ApiRequestError(404, { error: 'account_not_found', message: 'Account not found.', request_id: 'mock' })
+      if ('approval_level' in patch) a.approval_level = patch.approval_level ? patch.approval_level : null
+      if ('platform_admin' in patch) { a.is_platform_admin = !!patch.platform_admin; if (patch.platform_admin) a.auth_type = 'google' }
+      if ('is_active' in patch) a.is_active = !!patch.is_active
+      if (patch.department) a.department = patch.department
+      if (patch.label) a.label = patch.label
+      return { ...a }
     },
 
     async listServices() {

@@ -2,8 +2,9 @@
 // (mock.ts) implement, so every page codes against this and never against
 // which one is active. See index.ts for the switch.
 import type {
+  AccountBulkResult, AccountCreateResult, AccountRosterRow,
   AdminEmployee, AdminGrant, AdminLlmRow, AdminService, AdminRole,
-  AuditEntry, Me, PublicService, ServiceToken,
+  AuditEntry, FunctionalAccount, Me, PublicService, ServiceToken,
 } from './types'
 
 export interface EmployeeFilter { q?: string; dept?: string; status?: string }
@@ -23,6 +24,19 @@ export interface MmosApi {
     updateEmployee(id: string, patch: Partial<AdminEmployee>): Promise<AdminEmployee>
     setUserActive(userId: string, isActive: boolean): Promise<void>
     setPin(userId: string, pin: string | null): Promise<void>
+
+    // functional-mailbox accounts ("add & customize")
+    listAccounts(dept?: string): Promise<FunctionalAccount[]>
+    createAccount(payload: {
+      email: string; department: string; role?: string
+      approval_level?: string | null; platform_admin?: boolean; employee_code?: string
+    }): Promise<AccountCreateResult>
+    bulkAccounts(rows: AccountRosterRow[], dryRun: boolean): Promise<AccountBulkResult>
+    resetAccountPin(id: string): Promise<string>
+    updateAccount(id: string, patch: {
+      approval_level?: string | null; platform_admin?: boolean; is_active?: boolean
+      department?: string; label?: string
+    }): Promise<FunctionalAccount>
 
     listServices(): Promise<AdminService[]>
     createService(payload: Partial<AdminService>): Promise<AdminService>

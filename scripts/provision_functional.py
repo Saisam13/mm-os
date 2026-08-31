@@ -65,14 +65,21 @@ from pathlib import Path
 _BACKEND = Path(__file__).resolve().parents[1] / "backend"
 sys.path.insert(0, str(_BACKEND))
 
-from sqlalchemy import select  # noqa: E402
-
 from app.db import SessionLocal  # noqa: E402
-from app.models import Employee, User  # noqa: E402
-from app.provision import issue_one_time_pin  # noqa: E402
+from app.provision import (  # noqa: E402
+    DEFAULT_FUNCTIONAL_ROLE,
+    AccountResult,
+    provision_account,
+)
+
+# The per-row provisioning core (create/update the Employee + User, issue the one-time PIN,
+# honour "blank means leave unset") now lives in app/provision.py so this CLI and the admin
+# API endpoint POST /api/admin/accounts share ONE implementation and can never drift. This
+# module keeps only the roster-CSV concerns: reading the file and printing the report.
+RowResult = AccountResult  # kept as a local alias for the report/CSV writers below
 
 REQUIRED_COLUMNS = ("employee_code", "login_email", "department")
-DEFAULT_ROLE = "requester"
+DEFAULT_ROLE = DEFAULT_FUNCTIONAL_ROLE
 TRUTHY = {"true", "1", "yes", "y", "t"}
 
 
@@ -85,14 +92,6 @@ def _clean(v) -> str | None:
 
 def _truthy(v) -> bool:
     return (_clean(v) or "").lower() in TRUTHY
-
-
-def _label_from_email(email: str) -> str:
-    """A readable full_name from the mailbox's local-part, e.g. "purchase.c2@m-mines.com"
-    -> "Purchase C2". Falls back to the raw local-part if it has no word characters at all."""
-    local = email.split("@", 1)[0]
-    words = [w for w in local.replace(".", " ").replace("_", " ").replace("-", " ").split() if w]
-    return " ".join(w.capitalize() for w in words) or local
 
 
 @dataclass
@@ -131,120 +130,19 @@ def load_roster(path: str | Path) -> list[RosterRow]:
     return rows
 
 
-@dataclass
-class RowResult:
-    employee_code: str
-    login_email: str
-    employee_action: str  # would_create | created | would_update | updated | unchanged
-    user_action: str      # would_create | created | pin_kept | pin_reset | admin_no_email
-    role: str
-    platform_admin: bool
-    pin: str | None = None
-
-
-def _ensure_employee(db, row: RosterRow, *, commit: bool) -> tuple[Employee | None, str]:
-    """Idempotent, keyed on employee_code. Never creates a second Employee for a code that
-    already exists; updates work_email/hr_department (and the derived label) in place."""
-    existing = db.scalar(select(Employee).where(Employee.employee_code == row.employee_code))
-    label = _label_from_email(row.login_email)
-
-    if existing is None:
-        if not commit:
-            return None, "would_create"
-        emp = Employee(
-            employee_code=row.employee_code,
-            full_name=label,
-            work_email=row.login_email,
-            hr_department=row.department,
-            division=row.department or "Functional",
-            job_title="Functional Mailbox",
-            band="N/A",
-            status="active",
-            notes=f"functional mailbox; requested role: {row.role} (no Grant created -- see TODO)",
-        )
-        if row.approval_level:
-            emp.approval_level = row.approval_level
-        db.add(emp)
-        db.flush()  # need emp.id for the User row
-        return emp, "created"
-
-    changed = (
-        (existing.work_email or None) != (row.login_email or None)
-        or (existing.hr_department or None) != (row.department or None)
-        or existing.full_name != label
-        or (row.approval_level and (existing.approval_level or None) != row.approval_level)
-    )
-    if not commit:
-        return existing, ("would_update" if changed else "unchanged")
-
-    existing.work_email = row.login_email
-    existing.hr_department = row.department
-    existing.full_name = label
-    if row.approval_level:  # blank never overwrites an approval_level already on file
-        existing.approval_level = row.approval_level
-    return existing, ("updated" if changed else "unchanged")
-
-
-def _ensure_user(
-    db, employee: Employee | None, row: RosterRow, *, commit: bool, reset: bool, pin_length: int
-) -> tuple[str, str | None]:
-    """Returns (user_action, pin_or_None). Idempotent: re-running never duplicates a User and
-    never resets an already-issued PIN unless `reset=True`."""
-    user = None
-    if employee is not None:
-        user = db.scalar(select(User).where(User.employee_id == employee.id))
-
-    if user is None:
-        if not commit:
-            return "would_create", None
-        user = User(employee_id=employee.id, auth_type="google", login_email=row.login_email)
-        db.add(user)
-        db.flush()
-        if row.platform_admin:
-            user.is_platform_admin = True  # already auth_type='google' with login_email set
-        pin = issue_one_time_pin(db, user, length=pin_length)
-        return "created", pin
-
-    # existing user
-    if not commit:
-        if row.platform_admin and not user.is_platform_admin and not (user.login_email or row.login_email):
-            return "would_flag_admin_no_email", None
-        already_issued = user.pin_set_at is not None
-        return ("would_issue_pin" if (reset or not already_issued) else "unchanged"), None
-
-    if row.platform_admin and not user.is_platform_admin:
-        # Same mechanism as app/provision.py's provision_by_code: models.py's no_pin_admins
-        # CHECK forbids a local_pin admin, so flip to google auth first.
-        email = user.login_email or row.login_email
-        if not email:
-            return "admin_no_email", None
-        user.login_email = email
-        user.auth_type = "google"
-        user.is_platform_admin = True
-
-    already_issued = user.pin_set_at is not None
-    if already_issued and not reset:
-        return "pin_kept", None
-    pin = issue_one_time_pin(db, user, length=pin_length)
-    return ("pin_reset" if already_issued else "pin_issued"), pin
-
-
 def process_row(db, row: RosterRow, *, commit: bool, reset: bool, pin_length: int) -> RowResult:
-    employee, employee_action = _ensure_employee(db, row, commit=commit)
-    user_action, pin = _ensure_user(
-        db, employee, row, commit=commit, reset=reset, pin_length=pin_length
-    )
-    platform_admin_applied = bool(
-        commit and employee is not None and user_action not in ("admin_no_email",) and row.platform_admin
-    )
-    return RowResult(
+    """Provision one roster row through the shared core (app/provision.provision_account)."""
+    return provision_account(
+        db,
         employee_code=row.employee_code,
         login_email=row.login_email,
-        employee_action=employee_action,
-        user_action=user_action,
+        department=row.department,
         role=row.role,
-        platform_admin=platform_admin_applied if commit else row.platform_admin,
-        pin=pin,
+        approval_level=row.approval_level,
+        platform_admin=row.platform_admin,
+        commit=commit,
+        reset=reset,
+        pin_length=pin_length,
     )
 
 

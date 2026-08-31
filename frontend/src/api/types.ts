@@ -99,6 +99,68 @@ export interface AdminEmployee {
   last_login_at: string | null
 }
 
+// ── admin: functional-mailbox accounts ───────────────────────────────────
+// The operational "add & customize" surface for the functional mailboxes MM OS
+// provisions (purchase.c2@, central.stores@ ...). Shapes mirror
+// backend/app/routers/people.py's account endpoints.
+export interface FunctionalAccount {
+  id: string          // user id
+  employee_id: string
+  employee_code: string
+  email: string | null
+  label: string
+  department: string
+  approval_level: string | null
+  is_platform_admin: boolean
+  auth_type: 'google' | 'local_pin'
+  is_active: boolean
+  pin_set: boolean
+  must_change_pin: boolean
+}
+
+// One parsed roster row the bulk importer sends as JSON (the frontend parses the CSV).
+export interface AccountRosterRow {
+  employee_code?: string
+  email: string
+  department: string
+  role?: string
+  approval_level?: string | null
+  platform_admin?: boolean
+}
+
+export interface AccountBulkRow {
+  employee_code: string
+  email: string
+  employee_action: string
+  user_action: string
+  platform_admin: boolean
+  approval_level: string | null
+}
+
+export interface AccountBulkPin {
+  employee_code: string
+  email: string
+  pin: string
+  platform_admin: boolean
+}
+
+export interface AccountBulkResult {
+  dry_run: boolean
+  would_create?: number
+  would_update?: number
+  created?: number
+  updated?: number
+  unchanged: number
+  rows: AccountBulkRow[]
+  pins?: AccountBulkPin[]
+}
+
+export interface AccountCreateResult {
+  account: FunctionalAccount
+  pin: string | null
+  created: boolean
+}
+
 // ── admin: services / roles ─────────────────────────────────────────────
 export interface AdminRole {
   id: string
