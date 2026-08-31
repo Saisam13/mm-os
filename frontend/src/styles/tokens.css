@@ -39,9 +39,24 @@
   --chrome-text: #C4D3DD;
   --chrome-line: #123055;
 
+  /* soft shadow scale — cool-slate tinted (navy rgba), workspace design */
+  --shadow-sm: 0 1px 2px rgba(8,40,54,.05);
   --shadow: 0 1px 2px rgba(8,40,54,.06), 0 10px 28px -14px rgba(8,40,54,.22);
+  --shadow-md: 0 2px 6px rgba(8,40,54,.06), 0 8px 24px -10px rgba(8,40,54,.16);
+  --shadow-lg: 0 6px 16px -8px rgba(8,40,54,.14), 0 24px 48px -20px rgba(8,40,54,.20);
+
+  /* radius scale — from tight controls (sm) up to hero panels (2xl) */
   --r: 8px;
   --r-sm: 5px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-2xl: 26px;
+
+  /* motion */
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --dur: .18s;
+  --dur-slow: .3s;
 
   --f: 'Roboto', 'Segoe UI', system-ui, sans-serif;
   --fc: 'Roboto Condensed', 'Roboto', 'Segoe UI', sans-serif;
@@ -81,7 +96,10 @@
     --chrome-text: #A7BAC3;
     --chrome-line: #14313E;
 
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
     --shadow: 0 1px 2px rgba(0,0,0,.5), 0 14px 34px -16px rgba(0,0,0,.8);
+    --shadow-md: 0 2px 6px rgba(0,0,0,.45), 0 10px 28px -12px rgba(0,0,0,.75);
+    --shadow-lg: 0 6px 18px -8px rgba(0,0,0,.6), 0 28px 54px -22px rgba(0,0,0,.85);
   }
 }
 :root[data-theme="dark"] {
@@ -93,5 +111,8 @@
   --text:#E6EFF3; --text-2:#A7BAC3; --text-3:#7B909B;
   --ok:#4FC08D; --warn:#E0AC45; --warn-100:#322717;
   --chrome:#03121C; --chrome-text:#A7BAC3; --chrome-line:#14313E;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.45);
   --shadow:0 1px 2px rgba(0,0,0,.5), 0 14px 34px -16px rgba(0,0,0,.8);
+  --shadow-md:0 2px 6px rgba(0,0,0,.45), 0 10px 28px -12px rgba(0,0,0,.75);
+  --shadow-lg:0 6px 18px -8px rgba(0,0,0,.6), 0 28px 54px -22px rgba(0,0,0,.85);
 }

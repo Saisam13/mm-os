@@ -52,11 +52,16 @@ export function useLaunchService() {
   const [error, setError] = useState<{ slug: string; message: string } | null>(null)
   const navigate = useNavigate()
 
-  const launch = useCallback(async (service: MeService) => {
+  // `newTab` forces a separate window regardless of embeddability. The
+  // Services page passes it so every launch there opens a new tab — the
+  // deliberate contrast with the Dashboard, which embeds frameable services.
+  const launch = useCallback(async (service: MeService, opts?: { newTab?: boolean }) => {
     setError(null)
 
     if (!TOKEN_HANDOFF_ENABLED) {
-      if (canEmbed(service)) {
+      if (opts?.newTab) {
+        openNewTab(service.base_url)
+      } else if (canEmbed(service)) {
         navigate(`/services/open/${service.slug}`)
       } else {
         openNewTab(service.base_url)

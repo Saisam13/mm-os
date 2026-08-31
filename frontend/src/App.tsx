@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { ProtectedLayout, AdminGuard } from './routes/Guards'
 import { EntryPage } from './pages/EntryPage'
+import { Dashboard } from './pages/Dashboard'
 import { ServicesPage } from './pages/ServicesPage'
 import { ServiceOpenPage } from './pages/ServiceOpenPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -22,6 +23,7 @@ export function App() {
           <Route path="/" element={<EntryPage />} />
 
           <Route element={<ProtectedLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/services/open/:slug" element={<ServiceOpenPage />} />
             <Route path="/profile" element={<ProfilePage />} />

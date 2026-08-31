@@ -2,12 +2,14 @@ import React from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { ServiceMark } from '../components/ServiceMark'
 import { EmptyState } from '../components/EmptyState'
-import { useLaunchService, canEmbed } from '../lib/useLaunchService'
+import { useLaunchService } from '../lib/useLaunchService'
 import { kindFromLaunchMode } from '../lib/serviceKind'
 
 // The same surface as the entry page, now with role and status filled in.
 // Rows come straight from /api/me — never filtered client-side, the server
 // already returned only what this person may open (agents/A3-shell.md).
+// Every launch here opens a SEPARATE WINDOW (new tab) — the deliberate
+// contrast with the Dashboard, which embeds frameable services in place.
 export function ServicesPage() {
   const { me } = useAuth()
   const { launch, pending, error, clearError } = useLaunchService()
@@ -28,7 +30,7 @@ export function ServicesPage() {
               const rowError = error?.slug === s.slug ? error.message : null
               return (
                 <div key={s.slug}>
-                  <button className="svc" onClick={() => launch(s)} disabled={isPending}>
+                  <button className="svc" onClick={() => launch(s, { newTab: true })} disabled={isPending}>
                     <ServiceMark slug={s.slug} name={s.name} kind={kindFromLaunchMode(s.launch_mode)} />
                     <span>
                       <span className="svc-name">{s.name}</span>
@@ -36,7 +38,7 @@ export function ServicesPage() {
                     <span className="svc-grow" />
                     <span className="svc-meta">
                       {isPending ? <span className="chip">Opening…</span> : null}
-                      <span className="chip cond">{canEmbed(s) ? 'Embedded' : 'New tab'}</span>
+                      <span className="chip cond">New tab</span>
                       <span className={`chip${s.role === 'admin' || s.role === 'agent' || s.role === 'manager' ? ' pet' : ''}`}>{s.role}</span>
                       <span className={`dot${s.health === 'up' ? '' : s.health === 'build' ? ' o' : ' w'}`} />
                     </span>

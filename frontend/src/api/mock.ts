@@ -50,7 +50,9 @@ const REGISTRY: AdminService[] = [
   {
     id: 'svc-itemcode', slug: 'itemcode', name: 'Item Code Studio', tagline: 'Build and look up item codes',
     category: 'production', base_url: 'https://itemcode.m-mines.com', icon: 'hash',
-    launch_mode: 'handoff', has_public_surface: true, public_url: 'https://itemcode.m-mines.com/lookup',
+    // launch_mode 'embed' (https, no X-Frame-Options — see lib/useLaunchService
+    // canEmbed): lets the Dashboard's embed path be exercised in the dev mock.
+    launch_mode: 'embed', has_public_surface: true, public_url: 'https://itemcode.m-mines.com/lookup',
     is_active: true, sort_order: 20,
     roles: [
       { id: 'r3', key: 'viewer', name: 'Viewer', description: 'Look up any item code and read the naming standard. No changes.', is_default: true },

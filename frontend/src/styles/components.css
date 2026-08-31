@@ -276,7 +276,158 @@ details.role p { margin: 0 0 10px; font-size: 12.5px; color: var(--text-2); }
 .matrix td.cell:hover { background: var(--surface-2); }
 .matrix-empty { color: var(--text-3); }
 
+/* ══════════════════════ WORKSPACE (Dashboard) ═══════════════════════
+   The workspace design language: a services sidebar, a calm main area,
+   an app bar over the embedded frame, and a launch panel for services
+   that must open in their own window. Real classes, brand tokens — no
+   inline-style soup. Petrol accent throughout; neutrals cool, not grey. */
+.ws { display: flex; height: calc(100vh - 60px); overflow: hidden; background: var(--ground); }
+
+.ws-side {
+  width: 288px; flex: 0 0 288px; background: var(--surface);
+  border-right: 1px solid var(--border); display: flex; flex-direction: column;
+  overflow: hidden; box-shadow: var(--shadow-sm);
+  transition: width var(--dur-slow) var(--ease), flex-basis var(--dur-slow) var(--ease);
+}
+.ws-side.collapsed { width: 0; flex-basis: 0; border-right-color: transparent; box-shadow: none; }
+
+.ws-side-hd {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 15px 16px; border-bottom: 1px solid var(--border-soft); min-width: 288px;
+}
+.ws-side-hd .t {
+  font-family: var(--fc); font-size: 11px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--text-3);
+}
+
+.ws-iconbtn {
+  border: 1px solid transparent; background: transparent; color: var(--text-3);
+  width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.ws-iconbtn:hover { background: var(--surface-2); color: var(--petrol); }
+.ws-iconbtn.raised { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow-sm); }
+.ws-iconbtn.raised:hover { border-color: var(--petrol); }
+
+.ws-list { padding: 10px; overflow-y: auto; overflow-x: hidden; min-width: 288px; flex: 1; }
+.ws-list-empty { padding: 34px 18px; text-align: center; color: var(--text-3); font-size: 13px; }
+.ws-list-empty .t { color: var(--text-2); font-size: 13.5px; margin-bottom: 4px; }
+
+.ws-svc {
+  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+  padding: 9px 10px; margin-bottom: 3px; border: 1px solid transparent; border-radius: var(--r-lg);
+  background: transparent; color: var(--text); font-family: inherit;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.ws-svc:hover { background: var(--surface-2); }
+.ws-svc.active { background: var(--petrol-100); border-color: var(--petrol-100); }
+.ws-svc .g { min-width: 0; flex: 1; }
+.ws-svc .nm { font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-svc.active .nm { color: var(--petrol); }
+.ws-svc .rl { font-family: var(--fc); font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; margin-top: 1px; }
+.ws-svc.active .rl { color: var(--petrol); }
+
+.ws-main { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; background: var(--ground); }
+.ws-reveal { position: absolute; top: 13px; left: 14px; z-index: 20; }
+
+.ws-appbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
+  transition: padding-left var(--dur-slow) var(--ease);
+}
+.ws-main.collapsed .ws-appbar { padding-left: 60px; }
+.ws-appbar .ttl { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ws-appbar .ttl h2 { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-appbar .actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+
+.ws-frame { width: 100%; flex: 1; min-height: 0; border: 0; display: block; background: var(--surface); }
+.ws-embed { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
+.ws-embed.max { position: fixed; inset: 0; z-index: 9999; }
+
+/* small outline control used in the app bar */
+.btn-icon {
+  display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
+  color: var(--text-2); font-size: 13px; font-weight: 500; text-decoration: none;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.btn-icon:hover { border-color: var(--petrol); color: var(--petrol); }
+
+/* centred panels — empty state and the "opens in its own window" launch card */
+.ws-center { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px; }
+
+.ws-empty { display: flex; flex-direction: column; align-items: center; text-align: center; color: var(--text-3); }
+.ws-empty .icon { color: var(--border); margin-bottom: 18px; }
+.ws-empty .t { font-size: 17px; color: var(--text-2); font-weight: 500; }
+.ws-empty .s { font-size: 13px; margin-top: 6px; }
+
+.ws-launch {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-2xl);
+  box-shadow: var(--shadow-lg); padding: 46px 44px; max-width: 460px; width: 100%;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.ws-launch h2 { font-size: 21px; margin: 22px 0 8px; }
+.ws-launch p { color: var(--text-2); font-size: 14px; line-height: 1.6; margin-bottom: 26px; }
+
+.btn-launch {
+  display: inline-flex; align-items: center; gap: 9px; padding: 12px 22px;
+  border-radius: var(--r-md); border: none; background: var(--petrol); color: #fff;
+  font-weight: 500; font-size: 15px; text-decoration: none;
+  box-shadow: 0 8px 20px -8px rgba(0,93,127,.55);
+  transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.btn-launch:hover { background: var(--petrol-700); transform: translateY(-1px); }
+:root[data-theme="dark"] .btn-launch { color: #04222C; }
+:root:not([data-theme="light"]) .btn-launch { color: #04222C; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .btn-launch { color: #fff; } }
+
+/* ══════════════════════ ENTRY PAGE — workspace refresh ══════════════
+   Calm, branded, light. Petrol accent on a cool blue-tinted ground; the
+   PIN + Google flow is unchanged, only the surface is restyled. */
+.entry-hero {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 32px 22px; position: relative; overflow: hidden;
+  background:
+    radial-gradient(60vw 60vw at 12% -10%, var(--petrol-100) 0%, rgba(0,0,0,0) 60%),
+    radial-gradient(52vw 52vw at 108% 112%, var(--cyan-100) 0%, rgba(0,0,0,0) 60%),
+    var(--ground);
+}
+.entry-panel {
+  position: relative; z-index: 2; width: 100%; max-width: 412px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg); padding: 34px 32px;
+}
+.entry-brand { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-bottom: 26px; text-align: center; }
+.entry-brand .logo-type { font-family: var(--fc); font-weight: 700; line-height: .9; font-size: 26px; color: var(--petrol); }
+.entry-brand .logo-type .l1, .entry-brand .logo-type .l2 { display: block; }
+.entry-brand .tag { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--text-3); margin-top: 6px; }
+
+.entry-choice { display: flex; flex-direction: column; gap: 11px; }
+.entry-eyebrow {
+  font-family: var(--fc); font-size: 11px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--text-3); text-align: center; margin-bottom: 4px;
+}
+.choice-btn {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 14px 16px; border-radius: var(--r-lg); border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 15px; font-weight: 500;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.choice-btn:hover { border-color: var(--petrol); background: var(--surface-2); transform: translateY(-1px); }
+.choice-btn .ic { width: 34px; height: 34px; flex: 0 0 34px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--petrol-100); color: var(--petrol); }
+.choice-btn .sub { display: block; font-size: 12px; font-weight: 400; color: var(--text-3); margin-top: 1px; }
+.choice-arrow { margin-left: auto; color: var(--text-3); }
+.choice-btn:hover .choice-arrow { color: var(--petrol); }
+
+.entry-back {
+  display: inline-flex; align-items: center; gap: 6px; border: none; background: none;
+  color: var(--text-3); font-size: 13px; padding: 4px 0; margin-bottom: 14px;
+}
+.entry-back:hover { color: var(--petrol); }
+.entry-title { font-size: 18px; margin-bottom: 18px; }
+
 @media (max-width: 860px) {
   .topnav { gap: 14px; overflow-x: auto; }
   .kv { grid-template-columns: 1fr; gap: 2px 0; }
+  .ws-side { position: absolute; z-index: 30; height: 100%; }
 }

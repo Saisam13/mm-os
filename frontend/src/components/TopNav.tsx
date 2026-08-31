@@ -46,7 +46,10 @@ export function TopNav() {
   const sel = (path: string) => (location.pathname.startsWith(path) ? ' sel' : '')
 
   const paletteItems: PaletteItem[] = [
-    ...me.services.map((s) => ({ id: `svc-${s.slug}`, label: s.name, kind: s.role, run: () => launch(s) })),
+    // A service picked from the palette opens in the workspace (Dashboard),
+    // where it embeds if frameable and otherwise offers a launch panel.
+    ...me.services.map((s) => ({ id: `svc-${s.slug}`, label: s.name, kind: s.role, run: () => navigate(`/dashboard?app=${s.slug}`) })),
+    { id: 'nav-dashboard', label: 'Dashboard', kind: 'page', run: () => navigate('/dashboard') },
     { id: 'nav-services', label: 'Services', kind: 'page', run: () => navigate('/services') },
     { id: 'nav-profile', label: 'Profile', kind: 'page', run: () => navigate('/profile') },
     ...(isAdmin
@@ -65,7 +68,7 @@ export function TopNav() {
   return (
     <>
       <header className="topnav">
-        <Link to="/services" className="logo">
+        <Link to="/dashboard" className="logo">
           <svg className="logo-mark" width="24" height="24" viewBox="0 0 34 34" aria-hidden="true">
             <circle cx="11" cy="17" r="7.4" fill="none" stroke="#fff" strokeWidth="2.6" />
             <path d="M7.6 17h6.8M11 13.6v6.8" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
@@ -78,6 +81,9 @@ export function TopNav() {
           </span>
         </Link>
 
+        <Link to="/dashboard" className={`topnav-i${sel('/dashboard')}`}>
+          Dashboard
+        </Link>
         <Link to="/services" className={`topnav-i${sel('/services')}`}>
           Services
         </Link>
