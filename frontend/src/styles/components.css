@@ -134,21 +134,25 @@ input.fi:focus { outline: none; border-color: var(--petrol); box-shadow: 0 0 0 3
 .head h1 { font-size: var(--h1); }
 .eyebrow { font-family: var(--fc); font-size: 10.5px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; color: var(--text-3); }
 
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
+/* Content card — workspace expression: rounded, softly raised off the ground,
+   corners clipped so edge-to-edge tables/iframes follow the radius. */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
 .card + .card { margin-top: var(--gap); }
-.card-h { padding: 12px var(--pad); border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.card-h { padding: 13px var(--pad); border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .card-h h2 { font-size: var(--h2); }
 .card-b { padding: var(--pad); }
 .card-b.flush { padding: 0; }
 
-.tabs { display: flex; gap: 2px; margin-bottom: var(--gap); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+/* Admin section nav — a segmented control in the workspace idiom (soft-raised
+   selected pill) rather than a flat underline. Only AdminTabs uses this. */
+.tabs { display: inline-flex; gap: 4px; margin-bottom: var(--gap); padding: 5px; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-lg); flex-wrap: wrap; max-width: 100%; }
 .tab {
-  border: none; background: transparent; color: var(--text-2); padding: 9px 14px;
-  font-size: 13.5px; position: relative; border-radius: var(--r-sm) var(--r-sm) 0 0;
+  border: none; background: transparent; color: var(--text-2); padding: 8px 16px;
+  font-size: 13.5px; font-weight: 500; text-decoration: none; border-radius: var(--r-md);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
-.tab:hover { background: var(--surface-2); color: var(--text); }
-.tab.sel { color: var(--petrol); font-weight: 500; }
-.tab.sel::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--petrol); }
+.tab:hover { color: var(--text); }
+.tab.sel { color: var(--petrol); background: var(--surface); box-shadow: var(--shadow-sm); }
 
 .tw { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: var(--fs); }
@@ -166,6 +170,7 @@ td.tight { white-space: nowrap; }
 .btn-act {
   border: none; border-radius: var(--r-sm); background: var(--orange); color: #fff;
   padding: 7px 14px; font-weight: 500; font-size: 13px;
+  transition: filter var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 :root[data-theme="dark"] .btn-act { color: #2A1508; }
 :root:not([data-theme="light"]) .btn-act { color: #2A1508; }
@@ -175,6 +180,7 @@ td.tight { white-space: nowrap; }
 .btn-q {
   border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
   color: var(--text); padding: 7px 13px; font-size: 13px;
+  transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .btn-q:hover { border-color: var(--petrol); color: var(--petrol); }
 .btn-q:disabled { opacity: .5; cursor: default; }
@@ -187,6 +193,7 @@ td.tight { white-space: nowrap; }
 .field input, .field select, .field textarea {
   width: 100%; padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--border);
   background: var(--surface); color: var(--text); font-family: var(--f); font-size: 13.5px;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--petrol); box-shadow: 0 0 0 3px var(--petrol-100); }
 .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: var(--gap); }
@@ -216,8 +223,8 @@ td.tight { white-space: nowrap; }
 /* drill-down / drawer panel */
 .panel {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 94vw); z-index: 60;
-  background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow);
-  transform: translateX(102%); transition: transform .18s ease; overflow-y: auto;
+  background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow-lg);
+  transform: translateX(102%); transition: transform var(--dur-slow) var(--ease); overflow-y: auto;
 }
 .panel.on { transform: none; }
 .panel-h { padding: var(--pad); border-bottom: 1px solid var(--border-soft); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; position: sticky; top: 0; background: var(--surface); }
@@ -242,9 +249,11 @@ details.role p { margin: 0 0 10px; font-size: 12.5px; color: var(--text-2); }
 
 .spark { display: block; }
 
-/* confirm dialog */
-.confirm-scrim { position: fixed; inset: 0; background: rgba(6,26,34,.5); z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; }
-.confirm-box { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow); padding: var(--pad); }
+/* confirm dialog — modal in the workspace idiom: soft-lifted panel that eases in */
+.confirm-scrim { position: fixed; inset: 0; background: rgba(6,26,34,.5); z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; animation: scrim-in var(--dur) var(--ease); }
+.confirm-box { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); padding: var(--pad); animation: pop-in var(--dur-slow) var(--ease); }
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
 .confirm-box h2 { font-size: 16px; margin-bottom: 10px; }
 .confirm-box p { font-size: 13.5px; color: var(--text-2); line-height: 1.55; margin-bottom: 18px; }
 .confirm-box .row-actions { justify-content: flex-end; }
