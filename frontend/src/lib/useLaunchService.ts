@@ -14,7 +14,7 @@ import { ApiRequestError } from '../api/types'
 // The old path is kept, not deleted, behind this flag. The backend
 // endpoints it calls are untouched and still work. To re-enable it: flip
 // this to `true`. Nothing else needs to change.
-export const TOKEN_HANDOFF_ENABLED = false
+export const TOKEN_HANDOFF_ENABLED = true
 
 // A service only renders embedded in MM OS if the backend marked it
 // `embed` *and* the browser will actually load the frame. Real header
