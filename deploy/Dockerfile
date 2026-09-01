@@ -35,6 +35,7 @@ FROM python:3.12.14-slim-bookworm AS runtime
 
 # Non-root user. No shell login needed; this only ever runs uvicorn.
 RUN groupadd --system mmos && useradd --system --gid mmos --home-dir /app --no-create-home mmos
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/backend
 
@@ -71,7 +72,8 @@ RUN chmod +x /app/entrypoint.sh
 
 RUN mkdir -p /run/secrets /data && chown -R mmos:mmos /app /run/secrets /data
 
-USER mmos
+# NOTE: no `USER mmos` here on purpose — entrypoint.sh starts as root only to chown the
+# persisted /data volume, then re-execs itself as mmos via gosu, so the app runs unprivileged.
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

@@ -1,11 +1,20 @@
 #!/usr/bin/env sh
 # Optional boot steps, then serve.
 #
-# Both steps are OFF by default, so the production posture is unchanged: A6 deliberately kept
-# `alembic upgrade head` a separate operator action, and that is still what happens unless
-# MMOS_MIGRATE_ON_BOOT is explicitly set. A hosted demo has nobody at a terminal, so it turns
-# these on via the environment.
+# Both migrate/seed steps are OFF by default, so the production posture is unchanged unless
+# MMOS_MIGRATE_ON_BOOT / MMOS_SEED_ON_BOOT are set.
 set -eu
+
+# ── persisted-mount ownership fix ────────────────────────────────────────────
+# A Coolify/Docker volume mounts root-owned regardless of the image dir's owner, so the
+# non-root `mmos` user cannot write the persisted RSA signing key into /data
+# (MMOS_SIGNING_KEY_PATH). We therefore start as root ONLY to chown the mounts, then
+# re-exec this same script as `mmos` via gosu — so uvicorn and every boot step still run
+# unprivileged. The second pass (already mmos) skips this block.
+if [ "$(id -u)" = "0" ]; then
+  chown -R mmos:mmos /data /run/secrets 2>/dev/null || true
+  exec gosu mmos "$0" "$@"
+fi
 
 if [ "${MMOS_MIGRATE_ON_BOOT:-false}" = "true" ]; then
   echo "[boot] alembic upgrade head"
@@ -18,11 +27,6 @@ if [ "${MMOS_SEED_ON_BOOT:-false}" = "true" ]; then
 fi
 
 echo "[boot] starting uvicorn"
-# Horizontal scaling is now SAFE (BE-6, L1/L2 phase). The rate limiters (POST /api/token/service,
-# POST /api/auth/pin — 60/min each) used to be in-process, in-memory deques, which is why this was
-# pinned to `--workers 1`: a second worker kept its own counters and every limit silently became N
-# times more permissive. That state now lives in the shared `rate_limits` table in Postgres
-# (app/ratelimit.py), so all workers/replicas share one budget. We leave uvicorn at its default
-# (1 worker) here, but raising `--workers` or running multiple replicas is no longer forbidden.
-# See docs/10-runbook.md §16.
+# Horizontal scaling is safe (BE-6): rate-limit state is shared in Postgres (app/ratelimit.py),
+# not in-process, so raising --workers or running replicas is no longer forbidden. Default 1 worker.
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
