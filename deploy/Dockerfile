@@ -69,7 +69,7 @@ COPY --from=frontend-build /src/dist /app/frontend/dist
 COPY deploy/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-RUN mkdir -p /run/secrets && chown -R mmos:mmos /app /run/secrets
+RUN mkdir -p /run/secrets /data && chown -R mmos:mmos /app /run/secrets /data
 
 USER mmos
 
