@@ -16,6 +16,9 @@ COPY servicedesk/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY servicedesk/app ./app
+# http mode does `from mmos_client.core import MMOS`; the package lives in the monorepo
+# (build context is repo root) and must be present in the image or the app crashes on boot.
+COPY packages/mmos-client-py/mmos_client ./mmos_client
 COPY servicedesk/alembic ./alembic
 COPY servicedesk/alembic.ini ./alembic.ini
 COPY --from=frontend-build /src/dist ./frontend/dist
