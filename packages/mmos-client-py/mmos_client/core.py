@@ -126,7 +126,11 @@ class MMOS:
         self.clock_skew_seconds = clock_skew_seconds
         self.cookie_name = cookie_name or f"{slug}_mmos_at"
 
-        self._http = http_client or httpx.Client(base_url=self.os_url)
+        # follow_redirects: MM OS is fronted by a proxy that 302-redirects http→https
+        # (HTTPS-everywhere). The JWKS/revocations fetches must transparently follow that
+        # redirect, or a service configured with an http os_url gets the 302 body instead of
+        # the key set and fails every token with unknown_kid. httpx defaults this to False.
+        self._http = http_client or httpx.Client(base_url=self.os_url, follow_redirects=True)
         self._jwks = JWKSCache(
             f"{self.os_url}/.well-known/jwks.json",
             http_client=self._http,
