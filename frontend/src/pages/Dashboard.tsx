@@ -4,15 +4,18 @@ import { useAuth } from '../auth/AuthContext'
 import { canEmbed } from '../lib/useLaunchService'
 import { ServiceMark } from '../components/ServiceMark'
 import { kindFromLaunchMode } from '../lib/serviceKind'
+import { mmosApi } from '../api'
 import type { MeService } from '../api/types'
+import { ApiRequestError } from '../api/types'
 
 // The workspace: a sidebar of the person's services on the left, the active
 // app on the right. When a service is genuinely frameable (canEmbed —
 // launch_mode 'embed' AND not an http target from an https page, see
-// lib/useLaunchService.ts) it embeds in an iframe. When it is not, the main
-// area shows an explicit "opens in its own window" panel with a Launch
-// button — never a blank frame. This is the deliberate contrast with the
-// Services page, which always opens a new tab.
+// lib/useLaunchService.ts) MM OS mints a short-lived service token and points
+// the iframe at the `/_mmos/accept#token=…` handoff URL, so the service is
+// authenticated *inside the frame* rather than showing its own login. When a
+// service is not frameable, the main area shows an explicit "opens in its own
+// window" panel with a Launch button — never a blank frame.
 export function Dashboard() {
   const { me } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -21,16 +24,59 @@ export function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [maximized, setMaximized] = useState(false)
 
+  // The authenticated handoff URL for the active embeddable app. `null` while
+  // there is nothing to frame or while a mint is in flight.
+  const [frameUrl, setFrameUrl] = useState<string | null>(null)
+  const [minting, setMinting] = useState(false)
+  const [mintError, setMintError] = useState<string | null>(null)
+  // Bumping this re-runs the mint effect — used by the "Try again" affordance.
+  const [retryTick, setRetryTick] = useState(0)
+
   const active: MeService | null =
     (me && appParam && me.services.find((s) => s.slug === appParam)) || null
 
   // Reset full-screen whenever the selected app changes.
   useEffect(() => { setMaximized(false) }, [appParam])
 
+  const embeds = active ? canEmbed(active) : false
+
+  // Mint a fresh token whenever an embeddable app becomes active (or the user
+  // switches apps, or retries). The token is short-lived, so it is re-minted
+  // per app rather than cached. `cancelled` guards against a slow mint landing
+  // after the user has already moved to another app.
+  useEffect(() => {
+    if (!active || !embeds) {
+      setFrameUrl(null)
+      setMinting(false)
+      setMintError(null)
+      return
+    }
+    let cancelled = false
+    setFrameUrl(null)
+    setMintError(null)
+    setMinting(true)
+    mmosApi
+      .mintServiceToken(active.slug)
+      .then((token) => {
+        if (cancelled) return
+        setFrameUrl(token.launch_url)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        const message = e instanceof ApiRequestError
+          ? (e.status === 403 ? 'You cannot open this — the access was removed.' : e.message)
+          : 'Could not reach MM OS to open this service.'
+        setMintError(message)
+      })
+      .finally(() => {
+        if (!cancelled) setMinting(false)
+      })
+    return () => { cancelled = true }
+  }, [active?.slug, embeds, retryTick])
+
   if (!me) return null
 
   const select = (s: MeService) => setSearchParams({ app: s.slug })
-  const embeds = active ? canEmbed(active) : false
 
   return (
     <div className="ws">
@@ -103,15 +149,44 @@ export function Dashboard() {
                 </a>
               </div>
             </div>
-            {/* Same iframe configuration as ServiceOpenPage — internal,
-                backend-vetted (embed) target on a VPN-only deployment. The
+            {/* Authenticated in-frame: the src is the minted `/_mmos/accept
+                #token=…` handoff URL, not the bare base_url, so the service
+                signs the visitor in inside the frame. Same iframe config as
+                ServiceOpenPage — internal, backend-vetted (embed) target. The
                 fork's `allow-scripts allow-same-origin` sandbox is deliberately
                 not adopted (that pairing lets a frame drop its own sandbox). */}
-            <iframe
-              src={active.base_url}
-              title={active.name}
-              className="ws-frame"
-            />
+            {frameUrl ? (
+              <iframe
+                key={active.slug}
+                src={frameUrl}
+                title={active.name}
+                className="ws-frame"
+              />
+            ) : mintError ? (
+              <div className="ws-center">
+                <div className="ws-launch">
+                  <ServiceMark slug={active.slug} name={active.name} kind={kindFromLaunchMode(active.launch_mode)} size={56} />
+                  <h2>Could not open {active.name}</h2>
+                  <p>{mintError}</p>
+                  <div className="row-actions">
+                    <button className="btn-launch" onClick={() => setRetryTick((v) => v + 1)}>
+                      Try again
+                    </button>
+                    <a className="btn-q" href={active.base_url} target="_blank" rel="noopener noreferrer">
+                      Open in new tab
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="ws-center">
+                <div className="ws-empty">
+                  <span className="icon"><PanelIcon /></span>
+                  <div className="t">Opening {active.name}…</div>
+                  <div className="s">Signing you in securely.</div>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="ws-center">

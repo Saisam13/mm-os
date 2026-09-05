@@ -23,7 +23,7 @@ export function EntryPage() {
     mmosApi.getPublicServices().then(setServices).catch(() => setServices(null))
   }, [])
 
-  if (!loading && me) return <Navigate to="/dashboard" replace />
+  if (!loading && me) return <Navigate to="/services" replace />
 
   async function submitPin(e: React.FormEvent) {
     e.preventDefault()
@@ -32,7 +32,9 @@ export function EntryPage() {
     try {
       await mmosApi.signInWithPin(code.trim(), pin)
       await refresh()
-      navigate(loginType === 'admin' ? '/admin' : '/dashboard')
+      // Everyone lands on the Services app-grid — the home of MM OS. Admins
+      // still reach /admin from the top nav; this is just where sign-in drops you.
+      navigate('/services')
     } catch (err) {
       if (err instanceof ApiRequestError) {
         if (err.error === 'account_locked') setFormError('This account is locked. Contact IT.')
@@ -91,7 +93,7 @@ export function EntryPage() {
             </button>
             <h2 className="entry-title">{loginType === 'admin' ? 'Administrator sign-in' : 'User sign-in'}</h2>
 
-            <a className="btn-g" href={mmosApi.googleStartUrl(loginType === 'admin' ? '/admin' : '/dashboard')}>
+            <a className="btn-g" href={mmosApi.googleStartUrl('/services')}>
               <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
                 <path fill="#4285F4" d="M17.6 9.2c0-.6-.1-1.3-.2-1.8H9v3.5h4.8a4.1 4.1 0 0 1-1.8 2.7v2.2h2.9c1.7-1.6 2.7-3.9 2.7-6.6z" />
                 <path fill="#34A853" d="M9 18c2.4 0 4.5-.8 6-2.2l-2.9-2.2c-.8.5-1.8.9-3.1.9-2.4 0-4.4-1.6-5.2-3.8H.8v2.3A9 9 0 0 0 9 18z" />

@@ -26,6 +26,6 @@ export function AdminGuard() {
   const { me, loading } = useAuth()
   if (loading) return null
   if (!me) return <Navigate to="/" replace />
-  if (!me.user.is_platform_admin) return <Navigate to="/dashboard" replace />
+  if (!me.user.is_platform_admin) return <Navigate to="/services" replace />
   return <Outlet />
 }
