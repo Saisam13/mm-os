@@ -39,13 +39,19 @@ export function Dashboard() {
   useEffect(() => { setMaximized(false) }, [appParam])
 
   const embeds = active ? canEmbed(active) : false
+  // External services own their own session and never take an MM OS token.
+  // Everything else — embed AND handoff — is signed in with a minted token, so
+  // both need one. Handoff used to fall through to a bare-URL "launch" that
+  // carried no token, which just bounced the visitor back to the MM OS login.
+  const external = active?.launch_mode === 'external'
+  const needsToken = !!active && !external
 
-  // Mint a fresh token whenever an embeddable app becomes active (or the user
+  // Mint a fresh token whenever a token-taking app becomes active (or the user
   // switches apps, or retries). The token is short-lived, so it is re-minted
   // per app rather than cached. `cancelled` guards against a slow mint landing
   // after the user has already moved to another app.
   useEffect(() => {
-    if (!active || !embeds) {
+    if (!active || !needsToken) {
       setFrameUrl(null)
       setMinting(false)
       setMintError(null)
@@ -144,7 +150,7 @@ export function Dashboard() {
                   {maximized ? <Minimize /> : <Maximize />}
                   {maximized ? 'Exit full screen' : 'Full screen'}
                 </button>
-                <a className="btn-icon" href={active.base_url} target="_blank" rel="noopener noreferrer">
+                <a className="btn-icon" href={frameUrl ?? active.base_url} target="_blank" rel="noopener noreferrer">
                   <External /> Open tab
                 </a>
               </div>
@@ -188,15 +194,48 @@ export function Dashboard() {
               </div>
             )}
           </div>
-        ) : (
+        ) : external ? (
           <div className="ws-center">
             <div className="ws-launch">
               <ServiceMark slug={active.slug} name={active.name} kind={kindFromLaunchMode(active.launch_mode)} size={56} />
               <h2>{active.name}</h2>
-              <p>Opens in its own window. This service runs its own session and cannot be embedded here.</p>
+              <p>Opens in its own window. This service runs its own session.</p>
               <a className="btn-launch" href={active.base_url} target="_blank" rel="noopener noreferrer">
                 Launch {active.name} <ArrowRight />
               </a>
+            </div>
+          </div>
+        ) : (
+          // Handoff: an MM OS service that can't (or shouldn't) be framed. We
+          // still owe it a token — mint one and open the authenticated
+          // `/_mmos/accept#token=…` launch URL in a new tab. Opening it
+          // top-level rather than in an iframe keeps the service's session
+          // cookie first-party, so it is set reliably even in browsers that
+          // block third-party cookies (which an embedded handoff cannot rely
+          // on). This is the path that was silently dropping the token before.
+          <div className="ws-center">
+            <div className="ws-launch">
+              <ServiceMark slug={active.slug} name={active.name} kind={kindFromLaunchMode(active.launch_mode)} size={56} />
+              <h2>{active.name}</h2>
+              {mintError ? (
+                <>
+                  <p>{mintError}</p>
+                  <div className="row-actions">
+                    <button className="btn-launch" onClick={() => setRetryTick((v) => v + 1)}>
+                      Try again
+                    </button>
+                  </div>
+                </>
+              ) : frameUrl ? (
+                <>
+                  <p>Opens in a new tab, already signed in.</p>
+                  <a className="btn-launch" href={frameUrl} target="_blank" rel="noopener noreferrer">
+                    Launch {active.name} <ArrowRight />
+                  </a>
+                </>
+              ) : (
+                <p>Preparing your secure sign-in…</p>
+              )}
             </div>
           </div>
         )}

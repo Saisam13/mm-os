@@ -9,6 +9,36 @@ break something non-obvious — routine choices belong in code comments.
 
 ---
 
+## D-2026-09-08-1 · A handoff service is signed in top-level, not framed
+
+**Context.** The workspace shell had drifted so that only `embed`-mode services were minted a
+token; `handoff` services were launched like `external` ones, at their bare `base_url`, with
+no token. That silently broke sign-in for every standalone MM OS service (`purchase`,
+`servicedesk`) — the service bounced the tokenless request back to the MM OS shell.
+
+**Decision.** Every non-`external` service is minted a token. A framable one (`embed`) is
+signed in inside the iframe as before; a `handoff` one opens the authenticated
+`/_mmos/accept#token=…` URL in a **new top-level tab**.
+
+**Why top-level and not just make everything `embed`.** The accept page sets the service's
+session cookie. In an iframe the service is a third party to the MM OS top frame, so that
+cookie is a third-party cookie — `SameSite=None; Secure` is necessary (see D-2026-09-07-4)
+but not sufficient, because current browsers block third-party cookies outright by default.
+A handoff opened top-level is first-party: the cookie is set unconditionally, in every
+browser. So `embed` is the right default only for services that genuinely need to live inside
+the MM OS chrome and are known to work with partitioned/allowed cookies; `handoff` is the
+robust choice for everything else, and is now a real, working path rather than a dead one.
+
+**Consequences.**
+- Switching a service between `embed` and `handoff` is a real product choice with a cookie
+  trade-off behind it, not a cosmetic one. Embed = inside the chrome, fragile cookie; handoff
+  = new tab, reliable cookie.
+- The launch URL still comes from the registry `base_url`, so a correct `base_url` in the
+  live database remains a precondition — this fix does not remove the need to repoint stale
+  rows (D-2026-09-07-3 and `scripts/repoint_services.py`).
+
+---
+
 ## D-2026-09-07-1 · A server component must not guard the page that creates the session
 
 **Context.** Project Module is Next.js App Router. Its root layout is an async server

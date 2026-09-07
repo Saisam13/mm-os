@@ -8,6 +8,48 @@ that outlive the change that prompted them are recorded separately, in
 
 ---
 
+## 2026-09-08 — handoff services never received a token
+
+**Reported:** after the 7 Sep fixes were deployed and verified live (accept returns 200,
+health reports the control plane reachable), Project Module and Service Desk *still* bounced
+to the MM OS home page on sign-in.
+
+**Root cause — in the MM OS shell, not the services.** The workspace has three launch modes.
+`embed` mints a service token and frames the service at `/_mmos/accept#token=…`; `external`
+opens the service's own sign-in in a new tab. **`handoff` did neither** — it fell through to a
+panel whose "Launch" button opened the bare `base_url` with no token. The service then saw an
+unauthenticated request, redirected to `{os}/launch/{slug}`, and that is the MM OS SPA shell,
+i.e. the home page. `purchase` and `servicedesk` are both registered `handoff`, so neither
+could ever be signed into from the shell — and no amount of redeploying the *services* could
+change that, because the token is minted by the shell, which was dropping it.
+
+The mint-and-hand-off logic had been moved "inside the embed" in an earlier refactor, and the
+standalone (handoff) path was left calling the service like an external one.
+
+### Fixed
+
+- **Handoff services now get a token.** `frontend/src/pages/Dashboard.tsx` mints for every
+  token-taking service (`launch_mode !== 'external'`), and the handoff panel's Launch button
+  opens the authenticated `/_mmos/accept#token=…` URL — **in a new tab, top-level**, which
+  keeps the service session cookie *first-party* and therefore reliable even in browsers that
+  block third-party cookies (a guarantee an embedded handoff cannot make). Its loading and
+  "access removed" states match the embed path. `external` services are unchanged; their
+  panel no longer wrongly claims a handoff service "runs its own session". The "Open tab"
+  affordance in the embed view now carries the token too, instead of opening the bare URL.
+  See [D-2026-09-08-1](docs/16-decisions.md). Verified against the dev mock: the Launch button
+  href is now `…/_mmos/accept#token=…`, not `base_url`.
+
+### Still required to actually log in
+
+- **The live registry rows still decide the launch URL.** Redeploying the MM OS frontend
+  ships the code fix, but MM OS mints each launch URL from the `base_url` (and `slug`) in the
+  database, which `seed_services()` never updates once a row exists. Service Desk's row is
+  still `https://servicedesk.m-mines.com` (the dead host). Run
+  `python /app/scripts/repoint_services.py --apply` in the MM OS container, or edit `base_url`
+  in the admin UI, so it points at a reachable host. Confirm every service's `MMOS_SLUG`
+  matches its registry slug (`purchase`, `servicedesk`) — the token's `aud` is the registry
+  slug, and a mismatch fails verification.
+
 ## 2026-09-07 — the sign-in bounce
 
 **Reported:** "Project module is opening and even when I'm trying to log in through the link

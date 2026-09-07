@@ -2,6 +2,26 @@
 
 Running list of issues/gaps to work through. Newest context at top of each section.
 
+## Handoff services got no token — the real login blocker (8 Sep, fixed)
+After the 7 Sep fixes deployed and verified live (accept 200, control plane reachable),
+purchase and servicedesk *still* bounced to the MM OS home page. Root cause was in the MM OS
+**frontend**, not the services: the workspace only minted a token for `embed`-mode services;
+`handoff` mode opened the bare `base_url` with no token, so the service bounced the request
+to `{os}/launch/{slug}` = the SPA home page. Fixed in `frontend/src/pages/Dashboard.tsx` —
+handoff services now mint a token and open the `/_mmos/accept#token=…` URL in a new top-level
+tab (first-party cookie, browser-robust). Typecheck + build clean; verified in the dev mock
+that the Launch button href is the minted handoff URL, not base_url.
+- [ ] **Redeploy the MM OS frontend** (deploy-snapshot, commit below) — this is the fix.
+- [ ] Then fix the live registry (unchanged by any redeploy): run
+      `python /app/scripts/repoint_services.py --apply` in the MM OS container so Service
+      Desk's `base_url` stops pointing at the dead servicedesk.m-mines.com.
+- [ ] Confirm each service's `MMOS_SLUG` env equals its registry slug (`purchase`,
+      `servicedesk`); the token `aud` is the registry slug and a mismatch fails verification.
+- [ ] Deny-list minor bug: the TS client (project-module) omits `since` on its first
+      revocations poll, and MM OS's `/api/agent/revocations` requires it → HTTP 422, so that
+      service never syncs revocations. Login-independent; fix by defaulting `since` to epoch.
+
+
 ## BLOCKER — every *.m-mines.com host is off the VPS (7 Sep, verified)
 Owner report: "Project module opens but sign-in goes back to the MM OS home page; same with
 Service Desk." Two separate causes, both verified over the wire.
