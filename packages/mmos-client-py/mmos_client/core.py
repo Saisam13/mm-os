@@ -96,6 +96,14 @@ class CurrentUser:
 # `## Assumptions` in the handoff.
 _ACTIVE: "MMOS | None" = None
 
+# The `iss` claim MM OS actually signs (backend/app/config.py). It is an IDENTITY, not an
+# address: MM OS stamps this string whatever hostname you reached it on. Defaulting it to
+# `os_url` — as this client used to — silently couples token verification to the URL, so the
+# day a service is repointed at a different hostname (a DNS move, a Coolify sslip.io
+# fallback) every token starts failing on issuer with nothing in the logs to say why. That
+# is half of the 7 Sep outage; see docs/16-decisions.md D-2026-09-07-2.
+DEFAULT_ISSUER = "https://os.m-mines.com"
+
 
 class MMOS:
     def __init__(
@@ -121,7 +129,7 @@ class MMOS:
         self.os_url = os_url.rstrip("/")
         self.service_key = service_key
         self.public_paths = list(public_paths or [])
-        self.issuer = issuer or self.os_url
+        self.issuer = issuer or DEFAULT_ISSUER
         self.version = version
         self.clock_skew_seconds = clock_skew_seconds
         self.cookie_name = cookie_name or f"{slug}_mmos_at"
@@ -187,6 +195,40 @@ class MMOS:
             except TokenError as exc:
                 raise HTTPException(status_code=401, detail={"error": exc.reason})
         return CurrentUser.from_claims(claims)
+
+    # ── pointing check ───────────────────────────────────────────────────
+    def probe_os(self) -> tuple[bool, str | None]:
+        """Is this service actually pointed at a live MM OS?
+
+        The 7 Sep outage was a pointing failure, not a code failure: the hostname the
+        services were configured with stopped resolving to the VPS and nothing noticed until
+        a person tried to sign in. This fetches the key set the same way verification does,
+        so a wrong pointer is a readable health field instead of a redirect loop.
+
+        Returns `(reachable, detail)`; `detail` is None when reachable.
+        """
+        try:
+            resp = self._http.get("/.well-known/jwks.json", timeout=5.0)
+        except Exception as exc:  # noqa: BLE001 — a health probe never raises
+            return False, f"{type(exc).__name__}: {exc}"
+
+        if resp.status_code != 200:
+            return False, f"HTTP {resp.status_code}"
+
+        content_type = resp.headers.get("content-type", "")
+        if "json" not in content_type:
+            # The precise shape of the outage: a parked host, or MM OS's own SPA catch-all,
+            # answers 200 with HTML. Saying so beats a JSON decode error.
+            return False, f"expected JSON, got {content_type or 'no content-type'}"
+
+        try:
+            keys = resp.json().get("keys")
+        except Exception:  # noqa: BLE001
+            return False, "response was not valid JSON"
+
+        if not isinstance(keys, list) or not keys:
+            return False, "key set is empty"
+        return True, None
 
     # ── allowlist ────────────────────────────────────────────────────────
     def _is_public(self, path: str) -> bool:
@@ -260,19 +302,42 @@ class MMOS:
                 mmos._verify(token)
             except TokenError as exc:
                 raise HTTPException(status_code=401, detail={"error": exc.reason})
+            # MM OS renders embeddable services in an iframe on its OWN origin, pointing
+            # that iframe straight at `/_mmos/accept#token=…`. A `lax` cookie is not sent in
+            # a cross-site frame at all, so the session would be set and then ignored on the
+            # very next request — indistinguishable, from the user's side, from a broken
+            # login. `none` is the only SameSite a framed session can use, and browsers
+            # accept it only with `Secure`, which this cookie already sets.
             response.set_cookie(
                 mmos.cookie_name,
                 token,
                 httponly=True,
                 secure=True,
-                samesite="lax",
+                samesite="none",
                 path="/",
             )
             return {"ok": True}
 
         @app.get("/_mmos/health", include_in_schema=False)
         def _health():
-            return {"ok": True, "slug": mmos.slug, "version": mmos.version}
+            # Reaching MM OS is the precondition for anyone signing in at all, so a health
+            # check that ignores it reports "ok" straight through an outage — which is
+            # exactly what every service did on 7 Sep while nobody could get in. `ok` here
+            # now means "a handoff can actually succeed".
+            reachable, detail = mmos.probe_os()
+            return {
+                "ok": reachable,
+                "slug": mmos.slug,
+                "version": mmos.version,
+                # Neither is a secret: the issuer is in every token and the URL is in every
+                # redirect. The service key is never echoed.
+                "os": {
+                    "reachable": reachable,
+                    "url": mmos.os_url,
+                    "issuer": mmos.issuer,
+                    "error": detail,
+                },
+            }
 
         app.add_middleware(BaseHTTPMiddleware, dispatch=self._dispatch)
         app.add_exception_handler(HTTPException, _flat_http_exception_handler)

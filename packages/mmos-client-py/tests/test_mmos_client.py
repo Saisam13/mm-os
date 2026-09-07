@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from jose import jwt
 
 from mmos_client import MMOS, CurrentUser, TokenError, llm_guard, report_usage, require_role
+from mmos_client.core import DEFAULT_ISSUER
 
 ISSUER = "https://os.test.local"
 KID = "mmos-test-2026-08"
@@ -76,6 +77,9 @@ class StubMMOS:
         self.llm_enabled = True
         self.unreachable = False
         self.jwks_calls = 0
+        # Lets a test hand back something other than a valid key set — e.g. the HTML a
+        # parked host serves — without teaching the stub a second handler.
+        self.jwks_response: httpx.Response | None = None
         self.revocations_calls = 0
         self.heartbeat_calls = 0
         self.last_heartbeat_body: dict | None = None
@@ -86,6 +90,8 @@ class StubMMOS:
         path = request.url.path
         if path == "/.well-known/jwks.json":
             self.jwks_calls += 1
+            if self.jwks_response is not None:
+                return self.jwks_response
             return httpx.Response(200, json={"keys": [self.jwk]})
         if path == "/api/agent/revocations":
             self.revocations_calls += 1
@@ -381,4 +387,64 @@ def test_health_endpoint(stub):
     client = TestClient(app)
     resp = client.get("/_mmos/health")
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "slug": SLUG, "version": "9.9.9"}
+    assert resp.json() == {
+        "ok": True,
+        "slug": SLUG,
+        "version": "9.9.9",
+        "os": {"reachable": True, "url": ISSUER, "issuer": ISSUER, "error": None},
+    }
+
+
+def test_health_is_not_ok_when_mm_os_cannot_be_reached(stub):
+    """The 7 Sep regression: every service answered a cheerful `ok` for two days while its
+    configured hostname pointed at a parked box and nobody could sign in."""
+    mmos = make_mmos(stub)
+    app = _build_app(mmos)
+    client = TestClient(app)
+
+    stub.unreachable = True
+    body = client.get("/_mmos/health").json()
+    assert body["ok"] is False
+    assert body["os"]["reachable"] is False
+    assert body["os"]["error"]
+
+
+def test_health_rejects_html_pretending_to_be_a_key_set(stub):
+    """A parked host — or MM OS's own SPA catch-all — answers 200 with index.html. That must
+    read as a broken pointer, not as a healthy service."""
+    mmos = make_mmos(stub)
+    app = _build_app(mmos)
+
+    stub.jwks_response = httpx.Response(
+        200, text="<!doctype html><title>MM OS</title>", headers={"content-type": "text/html"}
+    )
+    body = TestClient(app).get("/_mmos/health").json()
+    assert body["ok"] is False
+    assert "text/html" in body["os"]["error"]
+
+
+def test_issuer_defaults_to_mm_os_identity_not_the_url_it_was_reached_on(stub):
+    """`iss` is an identity, not an address. Deriving it from os_url means repointing the
+    service at a new hostname silently invalidates every token."""
+    client = httpx.Client(base_url=ISSUER, transport=httpx.MockTransport(stub.handler))
+    mmos = MMOS(
+        slug=SLUG,
+        os_url="https://some-coolify-fallback.sslip.io",
+        service_key="mmk_test",
+        http_client=client,
+    )
+    assert mmos.issuer == DEFAULT_ISSUER
+
+
+def test_session_cookie_can_survive_mm_os_iframe(stub, keypair):
+    """MM OS embeds services in a cross-site iframe; a SameSite=Lax cookie is never sent
+    there, so the session would be set and then ignored on the next request."""
+    pem, _, _ = keypair
+    mmos = make_mmos(stub)
+    client = TestClient(_build_app(mmos))
+
+    resp = client.post("/_mmos/session", json={"token": mint(pem)})
+    assert resp.status_code == 200
+    set_cookie = resp.headers["set-cookie"].lower()
+    assert "samesite=none" in set_cookie
+    assert "secure" in set_cookie

@@ -5,10 +5,12 @@ Every route here sits behind `require_admin`. Mounted at `/api/admin` by `app/ma
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import and_, or_, select
@@ -192,6 +194,91 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 def list_services(admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)):
     services = db.scalars(select(Service).order_by(Service.sort_order, Service.name)).all()
     return {"services": [_service_out(s) for s in services]}
+
+
+@router.get("/services/reachability")
+async def services_reachability(
+    admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+):
+    """Can each registered service actually be opened?
+
+    Every launch URL MM OS mints is `{base_url}/_mmos/accept#token=…`, so a `base_url`
+    pointing somewhere the service no longer lives makes sign-in fail with no error anyone
+    can see — the browser simply ends up back here. That is what happened on 7 Sep, when the
+    m-mines.com subdomains stopped resolving to the VPS: the registry still held perfectly
+    well-formed https URLs, the services themselves were healthy on their own hostnames, and
+    the only symptom was users bouncing back to the MM OS home page.
+
+    This asks each `base_url` the question the browser will ask. `external` services run
+    their own session and expose no `/_mmos/health`, so they are only checked for liveness.
+    See docs/16-decisions.md D-2026-09-07-3.
+    """
+    # Read the registry fully before any await: the session is sync and must not be held
+    # open across the probes, which take seconds when a host is black-holing packets.
+    services = [
+        {"slug": s.slug, "name": s.name, "base_url": s.base_url,
+         "launch_mode": s.launch_mode, "is_active": s.is_active}
+        for s in db.scalars(select(Service).order_by(Service.sort_order, Service.name))
+    ]
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=8.0) as http:
+        results = await asyncio.gather(*(_probe_service(http, s) for s in services))
+
+    return {
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "unreachable": sum(1 for r in results if not r["reachable"]),
+        "services": results,
+    }
+
+
+async def _probe_service(http: httpx.AsyncClient, svc: dict) -> dict:
+    out = {**svc, "reachable": False, "detail": None, "os_url": None, "issuer": None}
+    external = svc["launch_mode"] == "external"
+    url = svc["base_url"].rstrip("/") + ("/" if external else "/_mmos/health")
+
+    try:
+        resp = await http.get(url)
+    except Exception as exc:  # noqa: BLE001 — a probe reports, it never raises
+        out["detail"] = f"{type(exc).__name__}: {exc}"
+        return out
+
+    if resp.status_code >= 400:
+        out["detail"] = f"HTTP {resp.status_code}"
+        return out
+
+    if external:
+        out["reachable"] = True
+        return out
+
+    if "json" not in resp.headers.get("content-type", ""):
+        # A parked host, or the wrong app entirely, answers 200 with HTML. That is a broken
+        # pointer, not a healthy service, and saying so is the whole point of this route.
+        out["detail"] = f"not an MM OS service here — got {resp.headers.get('content-type') or 'no content-type'}"
+        return out
+
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001
+        out["detail"] = "response was not valid JSON"
+        return out
+
+    # The service tells us what IT thinks it is pointed at. A slug mismatch means two
+    # registry rows have been crossed; an unreachable os means the service is up but nobody
+    # can sign into it, which is a different failure from this one and worth separating.
+    reported_slug = body.get("slug")
+    if reported_slug and reported_slug != svc["slug"]:
+        out["detail"] = f"that URL is the '{reported_slug}' service, not '{svc['slug']}'"
+        return out
+
+    os_info = body.get("os") or {}
+    out["os_url"] = os_info.get("url")
+    out["issuer"] = os_info.get("issuer")
+    if os_info and os_info.get("reachable") is False:
+        out["detail"] = f"service is up but cannot reach MM OS: {os_info.get('error')}"
+        return out
+
+    out["reachable"] = True
+    return out
 
 
 @router.post("/services", status_code=201)
