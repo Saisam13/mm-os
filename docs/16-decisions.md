@@ -9,6 +9,32 @@ break something non-obvious — routine choices belong in code comments.
 
 ---
 
+## D-2026-09-08-2 · The token issuer is a separate setting from the deployment's public URL
+
+**Context.** MM OS's single `issuer` setting was used both as the JWT `iss` claim and as the
+base for the Google OAuth redirect URI. These pull in opposite directions: the OAuth redirect
+must be the *reachable* host and must match Google Cloud Console, while the token issuer must
+be a *stable identity* that every service agrees on and that never changes when the
+deployment moves. Conflated, they forced a choice — and pointing the one setting at the
+reachable sslip.io host (so Google login worked) made every service token carry an `iss` no
+service accepts. That was the 8 Sep sign-in failure.
+
+**Decision.** Two settings. `issuer` (default `https://os.m-mines.com`) is the token identity
+and nothing else. `public_url` is the externally reachable base URL, used only to build the
+OAuth redirect; empty means fall back to `issuer`. This is the server-side counterpart of
+D-2026-09-07-2, which fixed the same identity-vs-address confusion on the client.
+
+**Consequences.**
+- Moving MM OS between hosts (DNS change, sslip.io fallback) changes only `public_url` and,
+  if the redirect host is registered in Google Console, Google login. Service tokens are
+  untouched, because `issuer` does not move.
+- The two must be set consistently with Google Console: `public_url` (or `issuer` when
+  `public_url` is empty) + `/api/auth/google/callback` has to be an authorised redirect URI.
+- Existing single-value deployments keep working: unset `public_url` reproduces the old
+  behaviour exactly.
+
+---
+
 ## D-2026-09-08-1 · A handoff service is signed in top-level, not framed
 
 **Context.** The workspace shell had drifted so that only `embed`-mode services were minted a

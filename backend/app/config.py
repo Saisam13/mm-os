@@ -15,7 +15,16 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="MMOS_", extra="ignore")
 
     # ── identity of this deployment ───────────────────────────────────────
+    # `issuer` is the token IDENTITY — the `iss` claim every service verifies. It must be
+    # stable and identical everywhere, and must NOT follow the hostname the deployment
+    # happens to live on. See docs/16-decisions.md D-2026-09-08-2.
     issuer: str = "https://os.m-mines.com"
+    # `public_url` is the externally reachable base URL of THIS deployment — used only to
+    # build the Google OAuth redirect URI, which must be reachable and must match Google
+    # Cloud Console. It follows the host (an sslip.io URL today, os.m-mines.com once DNS is
+    # fixed). Kept separate from `issuer` precisely so moving hosts does not invalidate every
+    # service token. Empty = fall back to `issuer` (the original single-value behaviour).
+    public_url: str = ""
     environment: str = "production"
     version: str = "1.0.0"
 
@@ -64,7 +73,9 @@ class Settings(BaseSettings):
 
     @property
     def redirect_uri(self) -> str:
-        return self.issuer.rstrip("/") + self.google_redirect_path
+        # OAuth redirect is built from the reachable public URL, not the token issuer.
+        base = self.public_url or self.issuer
+        return base.rstrip("/") + self.google_redirect_path
 
 
 @lru_cache

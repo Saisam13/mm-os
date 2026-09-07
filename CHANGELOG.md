@@ -8,6 +8,41 @@ that outlive the change that prompted them are recorded separately, in
 
 ---
 
+## 2026-09-08 (later) — the token issuer was the deployment URL, not the identity
+
+**Reported:** with the shell fix and registry live, both services now *reached* their accept
+page and both **rejected the token** ("That sign-in link is not valid or has expired." /
+"Sign-in failed."). A real launch token, decoded, showed why:
+
+    iss = http://hrxd6lgu3h7qpnkbpy2mqgdc.200.234.36.153.sslip.io   (MM OS stamped this)
+    services verify iss == https://os.m-mines.com                    -> mismatch -> rejected
+
+`aud`, signature and expiry were all fine; the issuer alone failed it, on every service.
+
+**Root cause.** MM OS's `issuer` setting did double duty — the token `iss` claim *and* the
+base for the Google OAuth redirect URI ([config.py](backend/app/config.py) `redirect_uri`).
+During the sslip.io cutover `MMOS_ISSUER` was pointed at the reachable sslip.io host so Google
+login would work there; that silently changed the `iss` of every service token to a URL no
+service accepts.
+
+### Fixed
+
+- **`issuer` and the public URL are now separate settings.** `issuer` is the stable token
+  identity (`https://os.m-mines.com`) that services verify; the new `public_url`
+  (`MMOS_PUBLIC_URL`) is the reachable base used only for the Google OAuth redirect, and
+  falls back to `issuer` when unset (unchanged behaviour for anyone not using it). Moving the
+  deployment between hosts no longer invalidates every token. See
+  [D-2026-09-08-2](docs/16-decisions.md). Three tests cover it.
+
+### Required on the MM OS deployment (env only, then redeploy MM OS)
+
+1. Set **`MMOS_PUBLIC_URL`** to the deployment's current reachable URL — i.e. whatever
+   `MMOS_ISSUER` is set to *right now* (the sslip.io URL). This keeps the Google redirect URI
+   identical, so Google sign-in is unaffected and no Google Console change is needed.
+2. Set **`MMOS_ISSUER`** to **`https://os.m-mines.com`** (or remove it — that is the default).
+3. Redeploy MM OS. The services need no change: they already verify against
+   `https://os.m-mines.com`.
+
 ## 2026-09-08 — handoff services never received a token
 
 **Reported:** after the 7 Sep fixes were deployed and verified live (accept returns 200,
