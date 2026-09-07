@@ -83,10 +83,19 @@ domain owner can make.
 
 ### Still open — needs the domain owner
 
-- **Every `*.m-mines.com` subdomain resolves to 72.62.225.9**, a Hostinger shared-hosting
-  box. The VPS is `200.234.36.153` and is healthy. Verified against 8.8.8.8, so this is the
-  authoritative record (GoDaddy nameservers), not a local cache. `os.m-mines.com`,
-  `servicedesk.m-mines.com`, `desk.m-mines.com`, `itemcode.m-mines.com` and `att.m-mines.com`
-  are all affected. Everything currently runs on Coolify's `*.sslip.io` hostnames as a
-  stopgap. Repointing the A records at `200.234.36.153` and re-adding the domains in Coolify
-  (so it re-issues certificates) is the real fix; `services/reachability` will confirm it.
+- **The per-service A records are gone; a wildcard is absorbing them.** Every
+  `*.m-mines.com` name resolves to `72.62.225.9`, a Hostinger shared-hosting box — including
+  `random-nonexistent-xyz.m-mines.com`, which is what proves it. A wildcard `*` A record (the
+  kind hPanel creates automatically when a domain is attached to a shared-hosting plan) is
+  answering for every subdomain, because the specific records that used to point
+  `os`, `servicedesk`, `desk`, `itemcode`, `att`, `twenty`, `crm` and `passwordmanager` at the
+  VPS no longer exist. The VPS is `200.234.36.153` and is healthy. Checked against 8.8.8.8, so
+  this is the authoritative zone (GoDaddy nameservers), not a local cache.
+
+  **The fix is to re-create the specific A records**, one per subdomain, at
+  `200.234.36.153` — a specific record wins over a wildcard, so the wildcard itself can stay
+  and the shared-hosting site is unaffected. Deleting the wildcard alone would not help.
+  Then re-add each domain in Coolify so it re-issues certificates (https currently fails the
+  TLS handshake outright, since the shared box holds no certificate for these names).
+  `GET /api/admin/services/reachability` will confirm when it has taken. Until then
+  everything runs on Coolify's `*.sslip.io` hostnames.
