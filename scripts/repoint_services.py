@@ -67,6 +67,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--apply", action="store_true", help="write the corrected base_url values")
     ap.add_argument(
+        "--activate", action="store_true",
+        help="also flip is_active True for any inactive service (off by default -- activation "
+             "is an admin decision, not a health-check side effect)",
+    )
+    ap.add_argument(
         "--set", action="append", default=[], metavar="SLUG=URL",
         help="override one service's target; repeatable. Without it, seed.py's values are used.",
     )
@@ -98,8 +103,15 @@ def main() -> int:
 
             spec = intended_map.get(svc.slug, {})
             want_active = spec.get("is_active", True)
-            needs_active_fix = not svc.is_active and want_active
-            needs_url_fix = want != svc.base_url
+            # ONLY repoint a row whose current URL is unreachable. A working URL is left
+            # exactly as it is, even when the seed default differs -- "reachable" is not the
+            # same as "correct", and the seed default is often a build-time placeholder
+            # (a UAT instance, a shared container). Overwriting a live, working URL with a
+            # different working one is how this tool once moved ERPNext from prod to UAT.
+            needs_url_fix = (not ok) and (want != svc.base_url)
+            # Activation changes which tiles the whole company sees; that is an admin
+            # decision, not a side effect of a health check. Off unless --activate is asked.
+            needs_active_fix = args.activate and (not svc.is_active) and want_active
 
             if not needs_url_fix and not needs_active_fix:
                 continue
@@ -107,7 +119,8 @@ def main() -> int:
             row_updated = False
             if needs_url_fix:
                 want_ok, want_detail = probe(want, external=external)
-                print(f"{'':>8}-> intended URL: {want} ({'reachable' if want_ok else want_detail})")
+                print(f"{'':>8}-> current URL is unreachable; intended: {want} "
+                      f"({'reachable' if want_ok else want_detail})")
                 if not args.apply:
                     print(f"{'':>8}   (dry run -- pass --apply to write it)")
                 elif not want_ok:
@@ -119,7 +132,7 @@ def main() -> int:
                     print(f"{'':>8}   URL updated")
 
             if needs_active_fix:
-                print(f"{'':>8}-> intended active: True")
+                print(f"{'':>8}-> currently inactive; --activate given")
                 if not args.apply:
                     print(f"{'':>8}   (dry run -- pass --apply to activate)")
                 else:
