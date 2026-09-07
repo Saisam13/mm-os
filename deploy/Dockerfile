@@ -64,6 +64,12 @@ COPY backend/alembic ./alembic
 COPY packages/embed /app/packages/embed
 COPY --from=frontend-build /src/dist /app/frontend/dist
 
+# Operational tools that have to run against the live database, not a dev checkout.
+# scripts/repoint_services.py fixes stale service base_urls -- seed_services() is create-only
+# by design, so a URL that has gone stale in production cannot be corrected by redeploying,
+# and the only place with both the database and the network to probe it is this container.
+COPY scripts /app/scripts
+
 # The signing key is a mounted secret file, never baked into the image — see
 # deploy/docker-compose.yml and scripts/gen-signing-key.sh. This just makes sure the
 # mount point exists with the right owner before uvicorn (running as `mmos`) starts.
