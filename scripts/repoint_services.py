@@ -80,6 +80,7 @@ def main() -> int:
         overrides[slug.strip()] = url.strip()
 
     targets = {**intended_urls(), **overrides}
+    intended_map = {spec["slug"]: spec for spec in SERVICES}
     changed = broken = 0
 
     with SessionLocal() as db:
@@ -92,29 +93,47 @@ def main() -> int:
             status = "ok  " if ok else "DEAD"
             if not ok:
                 broken += 1
-            print(f"[{status}] {svc.slug:<14} {svc.base_url}\n{'':>8}{detail}")
+            act_tag = "" if svc.is_active else " (INACTIVE)"
+            print(f"[{status}] {svc.slug:<14} {svc.base_url}{act_tag}\n{'':>8}{detail}")
 
-            if want == svc.base_url:
+            spec = intended_map.get(svc.slug, {})
+            want_active = spec.get("is_active", True)
+            needs_active_fix = not svc.is_active and want_active
+            needs_url_fix = want != svc.base_url
+
+            if not needs_url_fix and not needs_active_fix:
                 continue
 
-            want_ok, want_detail = probe(want, external=external)
-            print(f"{'':>8}-> intended: {want} ({'reachable' if want_ok else want_detail})")
-            if not args.apply:
-                print(f"{'':>8}   (dry run -- pass --apply to write it)")
-                continue
-            if not want_ok:
-                # Repointing at a second dead URL turns one outage into two. Refuse.
-                print(f"{'':>8}   REFUSED: the intended URL is not reachable either")
-                continue
+            row_updated = False
+            if needs_url_fix:
+                want_ok, want_detail = probe(want, external=external)
+                print(f"{'':>8}-> intended URL: {want} ({'reachable' if want_ok else want_detail})")
+                if not args.apply:
+                    print(f"{'':>8}   (dry run -- pass --apply to write it)")
+                elif not want_ok:
+                    # Repointing at a second dead URL turns one outage into two. Refuse.
+                    print(f"{'':>8}   REFUSED: the intended URL is not reachable either")
+                else:
+                    svc.base_url = want
+                    row_updated = True
+                    print(f"{'':>8}   URL updated")
 
-            svc.base_url = want
-            changed += 1
-            print(f"{'':>8}   updated")
+            if needs_active_fix:
+                print(f"{'':>8}-> intended active: True")
+                if not args.apply:
+                    print(f"{'':>8}   (dry run -- pass --apply to activate)")
+                else:
+                    svc.is_active = True
+                    row_updated = True
+                    print(f"{'':>8}   activated (is_active: False -> True)")
+
+            if row_updated:
+                changed += 1
 
         if changed:
             db.commit()
 
-    print(f"\n{len(services)} services, {broken} unreachable, {changed} repointed")
+    print(f"\n{len(services)} services, {broken} unreachable, {changed} updated")
     return 1 if broken and not changed else 0
 
 

@@ -51,12 +51,12 @@ def test_seed_services_in_house_roles_have_descriptions(db):
             assert role.description, f"{slug}/{role.key} has no description"
 
 
-def test_seed_services_servicedesk_is_placeholder_and_inactive(db):
+def test_seed_services_servicedesk_is_active(db):
     seed_services(db)
     db.commit()
 
     servicedesk = db.scalar(select(models.Service).where(models.Service.slug == "servicedesk"))
-    assert servicedesk.is_active is False
+    assert servicedesk.is_active is True
 
 
 def test_seed_services_is_idempotent_and_preserves_hand_edits(db):

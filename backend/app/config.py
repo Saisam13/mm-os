@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # ── cookies ───────────────────────────────────────────────────────────
     cookie_name: str = "mmos_session"
-    cookie_domain: str = ".m-mines.com"
+    cookie_domain: str = ""
     cookie_secure: bool = True
 
     # ── PIN login ─────────────────────────────────────────────────────────

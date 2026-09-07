@@ -356,7 +356,7 @@ SERVICES: list[dict] = [
     ),
     dict(
         slug="servicedesk", name="Service Desk", category="platform",
-        base_url=SERVICEDESK_URL, launch_mode="handoff", is_active=False,
+        base_url=SERVICEDESK_URL, launch_mode="handoff", is_active=True,
         roles=[
             ("requester", "Requester", "Raise requests and track My requests."),
             ("agent", "Agent", "Work the IT agent console: triage, assign, propose and "

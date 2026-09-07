@@ -36,6 +36,16 @@ _ACCEPT_HTML = """<!doctype html>
   var msg = document.getElementById("mmos-msg");
   if (!m) { msg.textContent = "No token in the URL."; return; }
   var token = decodeURIComponent(m[1]);
+  // Read the ?next= query param so the caller can control where we land after
+  // sign-in. Defaults to "/" if absent. Only accept same-origin paths.
+  var params = new URLSearchParams(window.location.search);
+  var next = params.get("next") || "/";
+  if (!next.startsWith("/") || next.startsWith("//")) { next = "/"; }
+  // Optional localStorage key: some service frontends hold their token in
+  // localStorage (not just the HttpOnly cookie) for use in fetch() headers.
+  // Pass ?ls_key=sd_token (or whatever the frontend reads) from the launch URL
+  // to bridge the cookie-based handoff with the localStorage-based SPA.
+  var lsKey = params.get("ls_key") || "";
   fetch("/_mmos/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -44,7 +54,15 @@ _ACCEPT_HTML = """<!doctype html>
   }).then(function (r) {
     if (!r.ok) throw new Error("rejected");
     history.replaceState(null, "", window.location.pathname);
-    window.location.replace("/");
+    if (lsKey) {
+      try { localStorage.setItem(lsKey, token); } catch (_) {}
+    }
+    // Append mmos_token to the next URL so the SPA can bootstrap itself from it
+    // when the service frontend uses a localStorage/header pattern rather than
+    // reading the HttpOnly cookie directly.
+    var dest = new URL(next, window.location.origin);
+    dest.searchParams.set("mmos_token", token);
+    window.location.replace(dest.pathname + dest.search);
   }).catch(function () {
     history.replaceState(null, "", window.location.pathname);
     msg.textContent = "Sign-in failed. Ask MM OS to send a new link.";

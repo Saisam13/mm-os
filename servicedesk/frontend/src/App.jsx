@@ -18,7 +18,38 @@ const NAV = [
 ];
 
 export default function App() {
-  const [token, setTokenState] = useState(getToken());
+  const [token, setTokenState] = useState(() => {
+    // Primary handoff path: the MM OS /_mmos/accept page sets the HttpOnly
+    // session cookie then redirects to /?mmos_token={token}. We read it here,
+    // persist it to localStorage for subsequent API calls (which use Bearer),
+    // and clean the URL so the token doesn't linger in the address bar or
+    // browser history.
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get("mmos_token");
+    if (urlToken) {
+      try {
+        setToken(urlToken);
+        urlParams.delete("mmos_token");
+        const clean = window.location.pathname + (urlParams.toString() ? "?" + urlParams.toString() : "");
+        history.replaceState(null, "", clean);
+        return urlToken;
+      } catch (_) {}
+    }
+    // Fallback: hash-based token (direct deep-link or legacy accept page).
+    const hash = window.location.hash || "";
+    const m = hash.match(/token=([^&]+)/);
+    if (m) {
+      try {
+        const t = decodeURIComponent(m[1]);
+        if (t) {
+          setToken(t);
+          history.replaceState(null, "", window.location.pathname + window.location.search);
+          return t;
+        }
+      } catch (_) {}
+    }
+    return getToken();
+  });
   const [view, setView] = useState("mine");
   const [detailId, setDetailId] = useState(null);
 
