@@ -303,8 +303,12 @@ PURCHASE_URL = os.environ.get(
 SERVICEDESK_URL = os.environ.get(
     "MMOS_SVC_SERVICEDESK_URL", "https://uthjgvwpvx68afqgrz8gf9rh.200.234.36.153.sslip.io"
 )
+# ERPNext is ALWAYS the production Frappe Cloud site, never UAT. minimines-uat is the test
+# instance and must never be what employees land in from the portal. (Owner, 8 Sep, after a
+# repoint run wrongly moved it to UAT.) Overridable by env only to point at prod on another
+# domain, never at UAT.
 ERPNEXT_URL = os.environ.get(
-    "MMOS_SVC_ERPNEXT_URL", "https://minimines-uat.m.frappe.cloud"
+    "MMOS_SVC_ERPNEXT_URL", "https://minimines.m.frappe.cloud/app/home"
 )
 TWENTY_URL = os.environ.get("MMOS_SVC_TWENTY_URL", "https://twenty.m-mines.com")
 
