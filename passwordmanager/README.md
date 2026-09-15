@@ -78,7 +78,7 @@ See `.env.example`. Key ones:
 This shell does not touch MM OS's seed data or spine. To actually launch it from MM OS:
 
 1. Register a service record with `slug=purchase`, its base URL (e.g.
-   `https://ppa.m-mines.in` or wherever it's deployed), and a service key —
+   `https://po.m-mines.in` or wherever it's deployed), and a service key —
    same shape as servicedesk's registration, see `docs/05-service-integration.md`.
 2. Add a launch tile in MM OS's app catalog pointing at that base URL.
 3. Set this service's `AUTH_MODE=http` and `MMOS_SERVICE_KEY` to the issued key before

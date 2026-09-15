@@ -283,7 +283,7 @@ def resolve_managers(db: OrmSession) -> tuple[list[str], list[str]]:
 ITEMCODE_URL = os.environ.get("MMOS_SVC_ITEMCODE_URL", "https://icg.m-mines.in")
 SALESHUB_URL = os.environ.get("MMOS_SVC_ATT_URL", "https://sh.m-mines.in")
 OCR_URL = os.environ.get("MMOS_SVC_OCR_URL", "https://ocr.m-mines.in")
-PURCHASE_URL = os.environ.get("MMOS_SVC_PURCHASE_URL", "https://ppa.m-mines.in")
+PURCHASE_URL = os.environ.get("MMOS_SVC_PURCHASE_URL", "https://po.m-mines.in")
 SERVICEDESK_URL = os.environ.get("MMOS_SVC_SERVICEDESK_URL", "https://sd.m-mines.in")
 # ERPNext is ALWAYS the production Frappe Cloud site, never UAT.
 ERPNEXT_URL = os.environ.get(
