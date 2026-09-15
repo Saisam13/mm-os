@@ -14,7 +14,7 @@ app = FastAPI()
 
 mmos = MMOS(
     slug="itemcode",
-    os_url="https://os.m-mines.com",
+    os_url="https://m-mines.in",
     service_key=os.environ["MMOS_SERVICE_KEY"],
     public_paths=["/", "/lookup", "/api/public"],   # anything else needs a token
 )

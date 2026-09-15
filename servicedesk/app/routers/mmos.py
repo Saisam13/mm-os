@@ -46,6 +46,18 @@ if _cfg.auth_mode == "stub":
         return {"ok": True, "sub": user.sub}
 
 
+@router.get("/_mmos/info")
+def mmos_info():
+    """Lightweight, unauthenticated endpoint so the frontend can decide whether to show the
+    dev persona picker (stub) or redirect to MM OS (http/production)."""
+    cfg = settings()
+    return {
+        "os_url": cfg.mmos_os_url,
+        "slug": cfg.mmos_service_slug,
+        "auth_mode": cfg.auth_mode,
+    }
+
+
 class DevTokenIn(BaseModel):
     persona: str  # one of app.org_chart.SEED_PERSONAS's keys: MM88, MM81, MM05, MM33, MM-ITADMIN
     roles: list[str] = ["requester"]

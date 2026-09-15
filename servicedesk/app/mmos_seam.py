@@ -95,7 +95,7 @@ def get_real_mmos():
             issuer=cfg.mmos_issuer,
             version=cfg.version,
             cookie_name=COOKIE_NAME,
-            public_paths=["/healthz", "/api/badge"],
+            public_paths=["/healthz", "/api/badge", "/_mmos/info"],
         )
     return _real_mmos
 

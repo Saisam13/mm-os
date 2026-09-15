@@ -4,7 +4,7 @@ One file, no build step, no dependencies. MM OS serves it at `GET /embed.js`; ev
 includes it with a single tag:
 
 ```html
-<script src="https://os.m-mines.com/embed.js" defer></script>
+<script src="https://m-mines.in/embed.js" defer></script>
 ```
 
 That's the whole integration — see `docs/05-service-integration.md`. It reads its own MM OS

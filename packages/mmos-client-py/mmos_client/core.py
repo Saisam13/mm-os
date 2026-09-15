@@ -120,7 +120,7 @@ _ACTIVE: "MMOS | None" = None
 # day a service is repointed at a different hostname (a DNS move, a Coolify sslip.io
 # fallback) every token starts failing on issuer with nothing in the logs to say why. That
 # is half of the 7 Sep outage; see docs/16-decisions.md D-2026-09-07-2.
-DEFAULT_ISSUER = "https://os.m-mines.com"
+DEFAULT_ISSUER = "https://m-mines.in"
 
 
 class MMOS:

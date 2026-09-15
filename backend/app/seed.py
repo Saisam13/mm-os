@@ -278,39 +278,18 @@ def resolve_managers(db: OrmSession) -> tuple[list[str], list[str]]:
 
 
 # ── service registry + platform admin ──────────────────────────────────────
-# Real Coolify deployment URLs (read from the Coolify API 25 Aug 2026). These are sslip.io
-# addresses that will change once real DNS lands, so every one is overridable by an env var
-# rather than baked into the dict literals below -- swap the env var when DNS lands, no code
-# change needed.
-ITEMCODE_URL = os.environ.get(
-    "MMOS_SVC_ITEMCODE_URL", "https://2cuflhtkwq2sqxr6swhxafcc.200.234.36.153.sslip.io"
-)
-ATT_URL = os.environ.get(
-    "MMOS_SVC_ATT_URL", "https://llv4ukunkpxp6zhwsqwnyevr.200.234.36.153.sslip.io"
-)
-OCR_URL = os.environ.get(
-    "MMOS_SVC_OCR_URL", "https://tztgni1vqexwngopwpaxwpgh.200.234.36.153.sslip.io"
-)
-PURCHASE_URL = os.environ.get(
-    "MMOS_SVC_PURCHASE_URL", "https://mdqtimbvyv6zwpkgfvmcj44h.200.234.36.153.sslip.io"
-)
-# 7 Sep: this used to default to https://servicedesk.m-mines.com. That hostname stopped
-# resolving to the VPS -- it now points at a Hostinger shared-hosting box that answers 403 --
-# so every launch URL MM OS minted for Service Desk led nowhere and users bounced straight
-# back to the MM OS home page. The Coolify hostname below is the one actually verified to
-# serve the container. Point the env var back at the pretty domain the moment DNS is fixed;
-# `GET /api/admin/services/reachability` will tell you whether it took.
-SERVICEDESK_URL = os.environ.get(
-    "MMOS_SVC_SERVICEDESK_URL", "https://uthjgvwpvx68afqgrz8gf9rh.200.234.36.153.sslip.io"
-)
-# ERPNext is ALWAYS the production Frappe Cloud site, never UAT. minimines-uat is the test
-# instance and must never be what employees land in from the portal. (Owner, 8 Sep, after a
-# repoint run wrongly moved it to UAT.) Overridable by env only to point at prod on another
-# domain, never at UAT.
+# Canonical service URLs under the m-mines.in domain. Each is overridable by env var so a
+# deployment can still use sslip.io fallback hostnames when DNS hasn't propagated yet.
+ITEMCODE_URL = os.environ.get("MMOS_SVC_ITEMCODE_URL", "https://icg.m-mines.in")
+SALESHUB_URL = os.environ.get("MMOS_SVC_ATT_URL", "https://sh.m-mines.in")
+OCR_URL = os.environ.get("MMOS_SVC_OCR_URL", "https://ocr.m-mines.in")
+PURCHASE_URL = os.environ.get("MMOS_SVC_PURCHASE_URL", "https://ppa.m-mines.in")
+SERVICEDESK_URL = os.environ.get("MMOS_SVC_SERVICEDESK_URL", "https://sd.m-mines.in")
+# ERPNext is ALWAYS the production Frappe Cloud site, never UAT.
 ERPNEXT_URL = os.environ.get(
     "MMOS_SVC_ERPNEXT_URL", "https://minimines.m.frappe.cloud/app/home"
 )
-TWENTY_URL = os.environ.get("MMOS_SVC_TWENTY_URL", "https://twenty.m-mines.com")
+TWENTY_URL = os.environ.get("MMOS_SVC_TWENTY_URL", "https://crm.m-mines.in")
 
 # Each role tuple is (key, name, description). `description` is shown inline on the Access
 # page (brand/UI-DECISIONS.md "Access page - four capabilities": "role meanings shown
@@ -332,8 +311,8 @@ SERVICES: list[dict] = [
         ],
     ),
     dict(
-        slug="att", name="ATT Platform", category="production",
-        base_url=ATT_URL, launch_mode="handoff",
+        slug="att", name="Sales Hub", category="production",
+        base_url=SALESHUB_URL, launch_mode="handoff",
         roles=[
             ("viewer", "Viewer", "Read-only: dashboards, rankings, raw trade data, "
              "geo/regulatory logs, exports, and submitting trader feedback."),

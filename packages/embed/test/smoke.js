@@ -145,7 +145,7 @@ function buildContext({ scriptSrc, hostname, fetchImpl, activeElementTag }) {
     },
     getElementsByTagName(tag) {
       if (tag === "script" && scriptSrc === undefined) {
-        return [{ getAttribute: () => "https://os.m-mines.com/embed.js" }];
+        return [{ getAttribute: () => "https://m-mines.in/embed.js" }];
       }
       return [];
     },
@@ -183,22 +183,22 @@ function run(name, fn) {
 // ── 1. loads cleanly, exposes exactly one global, derives origin + slug ────────────────
 run("loads without throwing and derives origin + slug from the page it's embedded in", () => {
   const { sandbox } = buildContext({
-    scriptSrc: "https://os.m-mines.com/embed.js",
-    hostname: "itemcode.m-mines.com",
+    scriptSrc: "https://m-mines.in/embed.js",
+    hostname: "itemcode.m-mines.in",
     fetchImpl: () => Promise.reject(new Error("no network in this test")),
   });
   vm.runInContext(SRC, sandbox);
   assert.strictEqual(sandbox.MMOS.__embedded, true);
   assert.strictEqual(sandbox.MMOS.version, "1");
-  assert.strictEqual(sandbox.MMOS.origin, "https://os.m-mines.com");
+  assert.strictEqual(sandbox.MMOS.origin, "https://m-mines.in");
   assert.strictEqual(sandbox.MMOS.slug, "itemcode");
 });
 
 // ── 2. idempotent: including the tag twice must not throw or double-mount ──────────────
 run("is idempotent when the script tag is included twice", () => {
   const { sandbox } = buildContext({
-    scriptSrc: "https://os.m-mines.com/embed.js",
-    hostname: "att.m-mines.com",
+    scriptSrc: "https://m-mines.in/embed.js",
+    hostname: "att.m-mines.in",
     fetchImpl: () => Promise.reject(new Error("no network")),
   });
   vm.runInContext(SRC, sandbox);
@@ -210,8 +210,8 @@ run("is idempotent when the script tag is included twice", () => {
 // ── 3. degrades to the fallback link when /api/me fails ─────────────────────────────────
 run('falls back to "not signed in" when /api/me fails', async () => {
   const { sandbox, body } = buildContext({
-    scriptSrc: "https://os.m-mines.com/embed.js",
-    hostname: "echo.m-mines.com",
+    scriptSrc: "https://m-mines.in/embed.js",
+    hostname: "echo.m-mines.in",
     fetchImpl: () => Promise.reject(new Error("network down")),
   });
   vm.runInContext(SRC, sandbox);
@@ -228,14 +228,14 @@ run("renders user, role-in-this-service and open ticket count on success", async
   const meResponse = {
     user: { name: "Prashanth V" },
     services: [
-      { slug: "echo", name: "Echo Service", role: "admin", launch_mode: "handoff", base_url: "https://echo.m-mines.com" },
-      { slug: "desk", name: "Service Desk", role: "requester", launch_mode: "handoff", base_url: "https://os.m-mines.com" },
+      { slug: "echo", name: "Echo Service", role: "admin", launch_mode: "handoff", base_url: "https://echo.m-mines.in" },
+      { slug: "desk", name: "Service Desk", role: "requester", launch_mode: "handoff", base_url: "https://m-mines.in" },
     ],
     badges: { servicedesk_open: 3 },
   };
   const { sandbox, body } = buildContext({
-    scriptSrc: "https://os.m-mines.com/embed.js",
-    hostname: "echo.m-mines.com",
+    scriptSrc: "https://m-mines.in/embed.js",
+    hostname: "echo.m-mines.in",
     fetchImpl: () => Promise.resolve({ ok: true, json: () => Promise.resolve(meResponse) }),
   });
   vm.runInContext(SRC, sandbox);
@@ -251,12 +251,12 @@ run("renders user, role-in-this-service and open ticket count on success", async
 run("Cmd/Ctrl-K does not fire while the visitor is typing in a host input", async () => {
   const meResponse = {
     user: { name: "Demo" },
-    services: [{ slug: "echo", name: "Echo Service", role: "viewer", launch_mode: "handoff", base_url: "https://echo.m-mines.com" }],
+    services: [{ slug: "echo", name: "Echo Service", role: "viewer", launch_mode: "handoff", base_url: "https://echo.m-mines.in" }],
     badges: {},
   };
   const { sandbox, documentListeners, activeElement } = buildContext({
-    scriptSrc: "https://os.m-mines.com/embed.js",
-    hostname: "echo.m-mines.com",
+    scriptSrc: "https://m-mines.in/embed.js",
+    hostname: "echo.m-mines.in",
     fetchImpl: () => Promise.resolve({ ok: true, json: () => Promise.resolve(meResponse) }),
     activeElementTag: "INPUT",
   });

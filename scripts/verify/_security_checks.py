@@ -264,7 +264,7 @@ def _try_verify(token, denylist=None):
         verify_token(
             token,
             jwks_cache=_StaticJWKS(),
-            issuer="https://os.m-mines.com",
+            issuer="https://m-mines.in",
             audience="chk-service",
             skew_seconds=60,
             denylist=denylist or empty_denylist,
@@ -285,7 +285,7 @@ class _FakeUser:
     is_platform_admin = False
 
 
-os.environ["MMOS_ISSUER"] = "https://os.m-mines.com"
+os.environ["MMOS_ISSUER"] = "https://m-mines.in"
 from app.config import settings as _app_settings  # noqa: E402
 
 _app_settings.cache_clear()
@@ -316,7 +316,7 @@ def _b64u_json(d: dict) -> str:
 # and claim it needs none. Same technique backend/tests/test_security.py uses.
 none_alg_token = (
     f"{_b64u_json({'alg': 'none', 'typ': 'JWT', 'kid': _jwk['kid']})}."
-    f"{_b64u_json({'iss': 'https://os.m-mines.com', 'sub': 'user:x', 'aud': 'chk-service', 'exp': int(datetime.now(timezone.utc).timestamp()) + 900})}."
+    f"{_b64u_json({'iss': 'https://m-mines.in', 'sub': 'user:x', 'aud': 'chk-service', 'exp': int(datetime.now(timezone.utc).timestamp()) + 900})}."
 )
 check(
     '"alg": "none" token is rejected before any key material is touched',
@@ -338,7 +338,7 @@ pub_pem = _private_key.public_key().public_bytes(
     encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo,
 )
 _h = _b64u_json({"alg": "HS256", "typ": "JWT", "kid": _jwk["kid"]})
-_p = _b64u_json({"iss": "https://os.m-mines.com", "sub": "user:x", "aud": "chk-service",
+_p = _b64u_json({"iss": "https://m-mines.in", "sub": "user:x", "aud": "chk-service",
                   "exp": int(datetime.now(timezone.utc).timestamp()) + 900})
 _sig = _hmac.new(pub_pem, f"{_h}.{_p}".encode(), hashlib.sha256).digest()
 hs256_token = f"{_h}.{_p}.{base64.urlsafe_b64encode(_sig).rstrip(b'=').decode()}"

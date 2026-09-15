@@ -1,13 +1,6 @@
-// Stand-in for MM OS's real handoff (docs/04-auth-flow.md: click a tile, arrive signed in
-// via /_mmos/accept#token=...). That depends on packages/mmos-client-py (agent A4) and
-// embed.js, neither of which exist yet — see `## Assumptions` in the handoff. This screen
-// exercises the same POST /_mmos/accept endpoint against a dev-minted token so the four
-// views are actually clickable before that integration lands.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { setToken } from "./api.js";
 
-// Real MiniMines employees (backend/app/demo_seed.py), keyed by employee code so the same
-// person resolves the same way in MM OS — see app/org_chart.py's SEED_PERSONAS.
 const PERSONAS = [
   { key: "MM88", label: "MM88 · MAMATESH UDAY NAIK · Projects · requester", roles: ["requester"] },
   { key: "MM81", label: "MM81 · Chandrashekhar Keshav Kalvit · Projects · approver", roles: ["requester"] },
@@ -19,6 +12,15 @@ const PERSONAS = [
 export default function DevSignIn({ onSignedIn }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [info, setInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/_mmos/info")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { setInfo(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
 
   async function signInAs(persona) {
     setBusy(true);
@@ -41,12 +43,37 @@ export default function DevSignIn({ onSignedIn }) {
     }
   }
 
+  if (loading) {
+    return (
+      <main style={{ maxWidth: 460, textAlign: "center", paddingTop: 80 }}>
+        <p style={{ color: "var(--text-2)" }}>Loading…</p>
+      </main>
+    );
+  }
+
+  if (info && info.auth_mode === "http") {
+    const osUrl = info.os_url || "https://m-mines.in";
+    const launchUrl = `${osUrl}/dashboard?app=${info.slug || "servicedesk"}`;
+    return (
+      <main style={{ maxWidth: 460 }}>
+        <div className="page-head"><h1>Service Desk</h1></div>
+        <div className="card" style={{ padding: 24, textAlign: "center" }}>
+          <p style={{ color: "var(--text-2)", marginBottom: 16 }}>
+            Sign in through MM OS to access Service Desk.
+          </p>
+          <a href={launchUrl} className="btn" style={{ display: "inline-block", textDecoration: "none" }}>
+            Sign in via MM OS
+          </a>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main style={{ maxWidth: 460 }}>
       <div className="page-head"><h1>Service Desk</h1></div>
       <p style={{ color: "var(--text-2)" }}>
-        Sign-in normally arrives from MM OS. Until that integration is wired in, pick a
-        seeded person to continue.
+        Dev mode — pick a seeded person to continue.
       </p>
       <div className="card" style={{ padding: 16 }}>
         {PERSONAS.map((p) => (

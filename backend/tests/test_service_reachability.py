@@ -44,8 +44,8 @@ def _health(slug: str, *, os_reachable: bool = True, error: str | None = None) -
             "version": "1.0.0",
             "os": {
                 "reachable": os_reachable,
-                "url": "https://os.m-mines.com",
-                "issuer": "https://os.m-mines.com",
+                "url": "https://m-mines.in",
+                "issuer": "https://m-mines.in",
                 "error": error,
             },
         },
@@ -69,7 +69,7 @@ def test_healthy_service_reads_as_reachable(
     row = next(s for s in body["services"] if s["slug"] == "reach-ok")
     assert row["reachable"] is True
     assert row["detail"] is None
-    assert row["issuer"] == "https://os.m-mines.com"
+    assert row["issuer"] == "https://m-mines.in"
 
 
 def test_dead_hostname_is_reported_not_silently_tolerated(

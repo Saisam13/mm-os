@@ -2,7 +2,7 @@
 
 The 8 Sep outage: MMOS_ISSUER had been set to the deployment's reachable sslip.io URL so the
 Google OAuth redirect worked there, which also made every service token carry that URL as its
-`iss` — and the services verify against the stable https://os.m-mines.com, so every token was
+`iss` — and the services verify against the stable https://m-mines.in, so every token was
 rejected. The two concerns must not share one setting.
 """
 from __future__ import annotations
@@ -26,9 +26,9 @@ def _fresh_settings(monkeypatch, **env):
 
 def test_issuer_defaults_to_stable_identity(monkeypatch):
     s = _fresh_settings(monkeypatch)
-    assert s.issuer == "https://os.m-mines.com"
+    assert s.issuer == "https://m-mines.in"
     # With no public_url the redirect falls back to issuer — the original single-value shape.
-    assert s.redirect_uri == "https://os.m-mines.com/api/auth/google/callback"
+    assert s.redirect_uri == "https://m-mines.in/api/auth/google/callback"
 
 
 def test_public_url_moves_the_oauth_redirect_without_touching_the_token_issuer(monkeypatch):
@@ -42,7 +42,7 @@ def test_public_url_moves_the_oauth_redirect_without_touching_the_token_issuer(m
         "http://hrxd6lgu3h7qpnkbpy2mqgdc.200.234.36.153.sslip.io/api/auth/google/callback"
     )
     # But the token issuer stays the stable identity every service verifies against.
-    assert s.issuer == "https://os.m-mines.com"
+    assert s.issuer == "https://m-mines.in"
 
 
 def test_setting_issuer_to_the_host_is_what_broke_login(monkeypatch):
@@ -51,4 +51,4 @@ def test_setting_issuer_to_the_host_is_what_broke_login(monkeypatch):
         monkeypatch,
         MMOS_ISSUER="http://hrxd6lgu3h7qpnkbpy2mqgdc.200.234.36.153.sslip.io",
     )
-    assert s.issuer != "https://os.m-mines.com"  # exactly the misconfiguration to avoid
+    assert s.issuer != "https://m-mines.in"  # exactly the misconfiguration to avoid

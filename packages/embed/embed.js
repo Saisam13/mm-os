@@ -1,6 +1,6 @@
 /*! MM OS embed bar — packages/embed/embed.js
  * One file, no build step, no dependencies. Included by every service as:
- *   <script src="https://os.m-mines.com/embed.js" defer></script>
+ *   <script src="https://m-mines.in/embed.js" defer></script>
  * Zero config: MM OS origin comes from this script's own `src`; the current service comes
  * from `location.hostname`. Renders in a shadow root so host CSS can't touch it either way.
  * Contract: docs/05-service-integration.md. See handoff/a4-integration.md for deviations.
