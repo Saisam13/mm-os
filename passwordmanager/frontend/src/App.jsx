@@ -20,6 +20,14 @@ export default function App() {
   }
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const handoff = params.get("mmos_token");
+    if (handoff) {
+      setToken(handoff);
+      params.delete("mmos_token");
+      const clean = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (clean ? "?" + clean : ""));
+    }
     if (getToken()) refresh();
   }, []);
 

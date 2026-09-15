@@ -57,7 +57,7 @@ def test_mmos_accept_sets_session_cookie(client):
     r = client.post("/_mmos/accept", json={"token": token})
     assert r.status_code == 200
     assert r.json()["sub"] == "user:dev-local"
-    assert "passwordmanager_mmos_at" in r.cookies
+    assert "purchase_mmos_at" in r.cookies
 
 
 def test_index_page_shows_signed_in_name(client):

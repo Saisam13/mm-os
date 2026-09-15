@@ -24,10 +24,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./passwordmanager.db"
 
     # MM OS integration (docs/05-service-integration.md).
-    mmos_os_url: str = "https://os.m-mines.com"
-    mmos_service_slug: str = "passwordmanager"
+    mmos_os_url: str = "https://m-mines.in"
+    mmos_service_slug: str = "purchase"
     mmos_service_key: str = ""
-    mmos_issuer: str = "https://os.m-mines.com"
+    mmos_issuer: str = "https://m-mines.in"
 
     # Auth verification mode for the seam in app/mmos_seam.py.
     #   "http"  — verify real RS256 tokens against MM OS's published JWKS (production)
