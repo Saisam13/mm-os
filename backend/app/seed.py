@@ -411,6 +411,28 @@ def seed_platform_admin(db: OrmSession) -> str:
     return f"{PLATFORM_ADMIN_EMAIL}: created as platform admin"
 
 
+def grant_admin_all_services(db: OrmSession) -> list[str]:
+    """Give the platform admin an 'admin' (or first-defined) role on every service that
+    exists but where they have no grant yet. Idempotent."""
+    admin_user = db.scalar(select(User).where(User.login_email == PLATFORM_ADMIN_EMAIL))
+    if admin_user is None:
+        return []
+    existing_svc_ids = {g.service_id for g in db.scalars(select(Grant).where(Grant.user_id == admin_user.id))}
+    granted = []
+    for svc in db.scalars(select(Service)):
+        if svc.id in existing_svc_ids:
+            continue
+        role = db.scalar(select(ServiceRole).where(
+            ServiceRole.service_id == svc.id, ServiceRole.key == "admin"
+        )) or db.scalar(select(ServiceRole).where(ServiceRole.service_id == svc.id))
+        if role is None:
+            continue
+        db.add(Grant(user_id=admin_user.id, service_id=svc.id, service_role_id=role.id,
+                     granted_by=admin_user.id, reason="boot: platform admin"))
+        granted.append(svc.slug)
+    return granted
+
+
 # ── demo batch (batched access rollout) ─────────────────────────────────────────────────
 # Chat-instructed for the 25 Aug 2026 demo, layered on top of everything above: seed only a
 # curated slice of the sheet -- 2-3 of the most senior people per department, ~20-25 people
@@ -971,10 +993,13 @@ def main(argv: list[str] | None = None) -> int:
         try:
             created = seed_services(db)
             admin_status = seed_platform_admin(db)
+            admin_grants = grant_admin_all_services(db)
             db.commit()
             if created:
                 print(f"[seed] service registry: created {created}")
             print(f"[seed] platform admin: {admin_status}")
+            if admin_grants:
+                print(f"[seed] platform admin granted: {admin_grants}")
 
             # The 23-name demo seed is OPT-IN. A normal boot must NOT create demo accounts,
             # so the fixture path is a no-op unless MMOS_ENABLE_DEMO_SEED is explicitly set.
