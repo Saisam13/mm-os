@@ -285,6 +285,7 @@ SALESHUB_URL = os.environ.get("MMOS_SVC_ATT_URL", "https://sh.m-mines.in")
 OCR_URL = os.environ.get("MMOS_SVC_OCR_URL", "https://ocr.m-mines.in")
 PURCHASE_URL = os.environ.get("MMOS_SVC_PURCHASE_URL", "https://po.m-mines.in")
 SERVICEDESK_URL = os.environ.get("MMOS_SVC_SERVICEDESK_URL", "https://sd.m-mines.in")
+SPOKEDI_URL = os.environ.get("MMOS_SVC_SPOKEDI_URL", "https://spokedi.m-mines.in")
 # ERPNext is ALWAYS the production Frappe Cloud site, never UAT.
 ERPNEXT_URL = os.environ.get(
     "MMOS_SVC_ERPNEXT_URL", "https://minimines.m.frappe.cloud/app/home"
@@ -346,6 +347,14 @@ SERVICES: list[dict] = [
              "resolve requests across the department queue."),
             ("admin", "Administrator", "Everything an agent can do, plus approver decisions "
              "and Service Desk administration."),
+        ],
+    ),
+    dict(
+        slug="spokedi", name="Spoke Daily Input", category="production",
+        base_url=SPOKEDI_URL, launch_mode="embed",
+        roles=[
+            ("viewer", "Viewer", "View daily spoke production entries and reports."),
+            ("admin", "Administrator", "Everything a viewer can do, plus create and edit spoke entries."),
         ],
     ),
     dict(
