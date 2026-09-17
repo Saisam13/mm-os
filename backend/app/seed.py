@@ -967,17 +967,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.demo:
-        # The 23-name demo seed is now OPT-IN. A normal boot must NOT create demo accounts, so
-        # `--demo` is a deliberate no-op unless MMOS_ENABLE_DEMO_SEED is explicitly set. The
-        # container entrypoint still runs `python -m app.seed --demo` when MMOS_SEED_ON_BOOT is
-        # on, but that only seeds demo data on a box that has ALSO opted in with this flag --
-        # so production stays empty until real people are provisioned (scripts/provision_people.py).
-        if os.environ.get("MMOS_ENABLE_DEMO_SEED", "").strip().lower() not in ("1", "true", "yes"):
-            print("[seed] demo seed is OFF by default. Set MMOS_ENABLE_DEMO_SEED=1 to seed the "
-                  "23-name demo fixture. Skipping -- no demo accounts created.")
-            return 0
         db = SessionLocal()
         try:
+            created = seed_services(db)
+            admin_status = seed_platform_admin(db)
+            db.commit()
+            if created:
+                print(f"[seed] service registry: created {created}")
+            print(f"[seed] platform admin: {admin_status}")
+
+            # The 23-name demo seed is OPT-IN. A normal boot must NOT create demo accounts,
+            # so the fixture path is a no-op unless MMOS_ENABLE_DEMO_SEED is explicitly set.
+            if os.environ.get("MMOS_ENABLE_DEMO_SEED", "").strip().lower() not in ("1", "true", "yes"):
+                print("[seed] demo seed is OFF by default. Set MMOS_ENABLE_DEMO_SEED=1 to seed the "
+                      "23-name demo fixture. Skipping -- no demo accounts created.")
+                return 0
             logins = seed_from_fixture(db)
             _print_demo_logins(logins)
             print("\nCommitted.")
