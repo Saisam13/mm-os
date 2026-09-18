@@ -272,7 +272,9 @@ def _fetch_google_claims(code: str, code_verifier: str) -> dict:
     if token_resp.status_code != 200:
         log.error("Google token exchange failed: %s %s", token_resp.status_code, token_resp.text[:500])
         raise _AuthDenied("token_exchange_failed", "Could not sign in with Google.")
-    id_token = token_resp.json().get("id_token")
+    token_data = token_resp.json()
+    id_token = token_data.get("id_token")
+    access_token = token_data.get("access_token")
     if not id_token:
         log.error("Google token response missing id_token: %s", token_resp.text[:500])
         raise _AuthDenied("token_exchange_failed", "Could not sign in with Google.")
@@ -299,6 +301,7 @@ def _fetch_google_claims(code: str, code_verifier: str) -> dict:
             algorithms=["RS256"],
             audience=cfg.google_client_id,
             issuer=list(GOOGLE_ISSUERS),
+            access_token=access_token,
             options={"leeway": cfg.clock_skew_seconds},
         )
     except JWTError as exc:
