@@ -47,8 +47,8 @@ class RequestId(BaseHTTPMiddleware):
 
 
 # docs/06 asks for `default-src 'self'; connect-src 'self'; frame-ancestors 'none'`. Applied as
-# written, with two exceptions the doc did not anticipate, both required by decisions made
-# elsewhere and neither widening script execution:
+# written, with three exceptions the doc did not anticipate, all required by decisions made
+# elsewhere and none widening script execution:
 #
 #   * Roboto and Roboto Condensed are the brand faces (brand/BRAND.md) and are loaded from
 #     Google Fonts, so the stylesheet host and the font host must be reachable. Self-hosting
@@ -57,6 +57,9 @@ class RequestId(BaseHTTPMiddleware):
 #   * The shell uses ~26 inline `style` attributes for values computed at render time (service
 #     mark colours, sparkline geometry), so style attributes must be allowed. This does not
 #     permit inline <script>; script-src stays `'self'`.
+#   * Services with launch_mode="embed" are loaded in an iframe inside the shell. Without an
+#     explicit frame-src, CSP falls back to default-src 'self' and blocks every cross-origin
+#     iframe. The wildcard covers all *.m-mines.in / *.m-mines.com service subdomains.
 CSP = "; ".join([
     "default-src 'self'",
     "base-uri 'self'",
@@ -67,6 +70,7 @@ CSP = "; ".join([
     "img-src 'self' data:",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
+    "frame-src 'self' https://*.m-mines.in https://*.m-mines.com",
 ])
 
 
