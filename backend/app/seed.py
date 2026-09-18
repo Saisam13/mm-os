@@ -312,7 +312,7 @@ SERVICES: list[dict] = [
         ],
     ),
     dict(
-        slug="att", name="Sales Hub", category="production",
+        slug="saleshub", name="MiniMines Sales Hub", category="production",
         base_url=SALESHUB_URL, launch_mode="handoff",
         roles=[
             ("viewer", "Viewer", "Read-only: dashboards, rankings, raw trade data, "
@@ -631,7 +631,7 @@ DEMO_DEPT_SERVICE_HINTS: dict[str, str] = {
     "N-Hub": "itemcode", "P-Hub": "itemcode", "P-Spoke": "itemcode", "Second Life": "itemcode",
     "Projects": "purchase", "Project": "purchase", "Material Management": "purchase",
     "QA/QC": "ocr",
-    "Business Development": "att", "StratOps": "att", "Strategy Operations": "att",
+    "Business Development": "saleshub", "StratOps": "saleshub", "Strategy Operations": "saleshub",
 }
 DEFAULT_DEMO_SERVICE = "itemcode"
 
@@ -726,7 +726,7 @@ def apply_demo_logins_and_grants(
             admin_user.employee.hr_department, "platform admin", DEMO_PIN,
         )
     ]
-    for slug, key in (("itemcode", "admin"), ("att", "admin"), ("ocr", "admin"), ("purchase", "admin"), ("servicedesk", "admin")):
+    for slug, key in (("itemcode", "admin"), ("saleshub", "admin"), ("ocr", "admin"), ("purchase", "admin"), ("servicedesk", "admin")):
         _ensure_grant(db, admin_user, slug, key, granted_by=admin_user.id, reason="demo: platform admin sees everything")
 
     def _user_for(code: str) -> User:
