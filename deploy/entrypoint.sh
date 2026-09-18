@@ -24,6 +24,8 @@ fi
 if [ "${MMOS_SEED_ON_BOOT:-false}" = "true" ]; then
   echo "[boot] seeding from the committed demo fixture (idempotent)"
   python -m app.seed --demo || echo "[boot] seed failed; starting the API anyway so the cause is visible in /healthz"
+  echo "[boot] checking service URLs (repoint stale entries)"
+  python /app/scripts/repoint_services.py --apply || echo "[boot] repoint check failed (non-fatal)"
 fi
 
 echo "[boot] starting uvicorn"
