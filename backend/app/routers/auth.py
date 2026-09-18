@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -252,7 +253,10 @@ def _fetch_google_claims(code: str, code_verifier: str) -> dict:
     Both network calls go through module-level httpx.post / httpx.get so tests can
     monkeypatch them at that boundary -- no live Google calls happen in the test suite.
     """
+    log = logging.getLogger(__name__)
     cfg = settings()
+    log.info("Google OAuth: redirect_uri=%s, client_id=%s…%s",
+             cfg.redirect_uri, cfg.google_client_id[:8], cfg.google_client_id[-4:])
     token_resp = httpx.post(
         GOOGLE_TOKEN_URL,
         data={
@@ -266,21 +270,26 @@ def _fetch_google_claims(code: str, code_verifier: str) -> dict:
         timeout=10,
     )
     if token_resp.status_code != 200:
+        log.error("Google token exchange failed: %s %s", token_resp.status_code, token_resp.text[:500])
         raise _AuthDenied("token_exchange_failed", "Could not sign in with Google.")
     id_token = token_resp.json().get("id_token")
     if not id_token:
+        log.error("Google token response missing id_token: %s", token_resp.text[:500])
         raise _AuthDenied("token_exchange_failed", "Could not sign in with Google.")
 
     try:
         header = jwt.get_unverified_header(id_token)
-    except JWTError:
+    except JWTError as exc:
+        log.error("Google id_token header parse failed: %s", exc)
         raise _AuthDenied("invalid_token", "Could not verify Google sign-in.")
 
     jwks_resp = httpx.get(GOOGLE_JWKS_URL, timeout=10)
     if jwks_resp.status_code != 200:
+        log.error("Google JWKS fetch failed: %s", jwks_resp.status_code)
         raise _AuthDenied("invalid_token", "Could not verify Google sign-in.")
     key = next((k for k in jwks_resp.json().get("keys", []) if k.get("kid") == header.get("kid")), None)
     if key is None:
+        log.error("Google JWKS kid=%s not found in keys", header.get("kid"))
         raise _AuthDenied("invalid_token", "Could not verify Google sign-in.")
 
     try:
@@ -292,7 +301,8 @@ def _fetch_google_claims(code: str, code_verifier: str) -> dict:
             issuer=list(GOOGLE_ISSUERS),
             options={"leeway": cfg.clock_skew_seconds},
         )
-    except JWTError:
+    except JWTError as exc:
+        log.error("Google id_token verification failed: %s", exc)
         raise _AuthDenied("invalid_token", "Could not verify Google sign-in.")
 
     # aud, iss, exp are enforced by jwt.decode above.
