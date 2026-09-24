@@ -29,7 +29,7 @@ def test_seed_services_in_house_vs_third_party_launch_mode(db):
 
     by_slug = {s.slug: s for s in db.scalars(select(models.Service))}
 
-    for slug in ("itemcode", "att", "ocr", "purchase", "servicedesk"):
+    for slug in ("itemcode", "saleshub", "ocr", "purchase", "servicedesk", "spokedi", "samples"):
         assert by_slug[slug].launch_mode in ("handoff", "embed"), slug
 
     for slug in ("erpnext", "twenty"):
@@ -42,11 +42,15 @@ def test_seed_services_in_house_roles_have_descriptions(db):
 
     by_slug = {s.slug: s for s in db.scalars(select(models.Service))}
 
-    for slug in ("itemcode", "att", "ocr", "purchase", "servicedesk"):
+    for slug in ("itemcode", "saleshub", "ocr", "purchase", "servicedesk", "spokedi", "samples"):
         svc = by_slug[slug]
         assert svc.roles, f"{slug} has no roles"
         role_keys = {r.key for r in svc.roles}
-        assert {"viewer", "admin"} <= role_keys or {"requester", "agent", "admin"} <= role_keys
+        assert (
+            {"viewer", "admin"} <= role_keys
+            or {"requester", "agent", "admin"} <= role_keys
+            or {"requester", "stores", "qaqc", "hod", "admin"} <= role_keys
+        )
         for role in svc.roles:
             assert role.description, f"{slug}/{role.key} has no description"
 

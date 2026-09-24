@@ -286,6 +286,7 @@ OCR_URL = os.environ.get("MMOS_SVC_OCR_URL", "https://ocr.m-mines.in")
 PURCHASE_URL = os.environ.get("MMOS_SVC_PURCHASE_URL", "https://po.m-mines.in")
 SERVICEDESK_URL = os.environ.get("MMOS_SVC_SERVICEDESK_URL", "https://sd.m-mines.in")
 SPOKEDI_URL = os.environ.get("MMOS_SVC_SPOKEDI_URL", "https://spokedi.m-mines.in")
+SAMPLES_URL = os.environ.get("MMOS_SVC_SAMPLES_URL", "https://samples.m-mines.in")
 # ERPNext is ALWAYS the production Frappe Cloud site, never UAT.
 ERPNEXT_URL = os.environ.get(
     "MMOS_SVC_ERPNEXT_URL", "https://minimines.m.frappe.cloud/app/home"
@@ -355,6 +356,17 @@ SERVICES: list[dict] = [
         roles=[
             ("viewer", "Viewer", "View daily spoke production entries and reports."),
             ("admin", "Administrator", "Everything a viewer can do, plus create and edit spoke entries."),
+        ],
+    ),
+    dict(
+        slug="samples", name="Sample Tracking", category="production",
+        base_url=SAMPLES_URL, launch_mode="handoff",
+        roles=[
+            ("requester", "Requester", "Create sample requests and track their status and outcomes."),
+            ("stores", "Stores", "Receive, label, store and transfer samples with custody records."),
+            ("qaqc", "QA/QC", "Plan tests, record immutable result revisions and manage laboratory work."),
+            ("hod", "HOD", "Approve controlled catalogue changes and authorized workflow overrides."),
+            ("admin", "Administrator", "Manage access, ERP environment selection and service configuration."),
         ],
     ),
     dict(
