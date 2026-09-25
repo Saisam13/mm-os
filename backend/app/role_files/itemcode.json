@@ -1,0 +1,44 @@
+{
+  "format": "mmos-roles/1",
+  "service": "itemcode",
+  "permissions": {
+    "items.view": "Browse, search and export the item master, its history, vacancies and ERP status",
+    "items.create": "Create new item codes (resolve, ingest, commit) and add item aliases",
+    "items.edit": "Edit existing items, spec values and labels; rename; revert an item to an earlier version",
+    "taxonomy.manage": "Add heads, sub-heads and groups; move, merge or delete groups; map and classify ERP items",
+    "erp.push": "Push items, specs and vendors to ERPNext",
+    "erp.sync": "Run the ERPNext sync and the reconcile",
+    "settings.manage": "Change Item Code Studio settings, including LLM provider and keys"
+  },
+  "roles": [
+    {
+      "key": "associate",
+      "name": "Associate",
+      "description": "Looks up item codes and raises new ones. Cannot change existing items or the taxonomy.",
+      "default": true,
+      "permissions": ["items.view", "items.create"],
+      "replaces": ["viewer"]
+    },
+    {
+      "key": "manager",
+      "name": "Manager",
+      "description": "Everything an associate can do, plus edit items, restructure the taxonomy and push or sync with ERPNext.",
+      "permissions": ["items.view", "items.create", "items.edit", "taxonomy.manage", "erp.push", "erp.sync"]
+    },
+    {
+      "key": "admin",
+      "name": "Administrator",
+      "description": "Everything a manager can do, plus Item Code Studio settings and LLM keys.",
+      "permissions": ["items.view", "items.create", "items.edit", "taxonomy.manage", "erp.push", "erp.sync", "settings.manage"]
+    }
+  ],
+  "remove_unlisted": false,
+  "assign": {
+    "mode": "missing",
+    "rules": [
+      {"platform_admin": true, "role": "admin"},
+      {"is_approver": true, "role": "manager"}
+    ],
+    "default": "associate"
+  }
+}

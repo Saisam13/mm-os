@@ -8,17 +8,21 @@ export interface ApiError {
   error: string
   message: string
   request_id: string
+  // invalid_role_file: every problem in the uploaded file, not just the first
+  problems?: string[]
 }
 
 export class ApiRequestError extends Error {
   error: string
   request_id: string
   status: number
+  problems: string[]
   constructor(status: number, body: ApiError) {
     super(body.message)
     this.error = body.error
     this.request_id = body.request_id
     this.status = status
+    this.problems = Array.isArray(body.problems) ? body.problems : []
   }
 }
 
@@ -170,6 +174,7 @@ export interface AdminRole {
   name: string
   description: string | null
   is_default: boolean
+  permissions: string[]
 }
 
 export interface AdminService {
@@ -185,7 +190,41 @@ export interface AdminService {
   public_url: string | null
   is_active: boolean
   sort_order: number
+  permission_catalog: Record<string, string>
   roles: AdminRole[]
+}
+
+// ── admin: role files (backend/app/roles_io.py documents the format) ─────
+export interface RoleFile {
+  format?: string
+  service: string
+  permissions: Record<string, string>
+  roles: {
+    key: string; name: string; description?: string | null; default?: boolean
+    permissions?: string[]; replaces?: string[]
+  }[]
+  remove_unlisted?: boolean
+  assign?: {
+    mode?: 'missing' | 'all'
+    rules?: Record<string, unknown>[]
+    people?: Record<string, string>
+    default?: string
+  } | null
+}
+
+export interface RoleImportPlan {
+  dry_run: boolean
+  service: string
+  catalog_changed: boolean
+  roles_created: string[]
+  roles_updated: string[]
+  roles_removed: string[]
+  grants_moved: { user_id: string; from: string; to: string }[]
+  grants_created: { user_id: string; name: string; employee_code: string; role: string }[]
+  grants_changed: { user_id: string; name: string; employee_code: string; from: string; to: string }[]
+  unchanged_people: number
+  warnings: string[]
+  service_after?: AdminService
 }
 
 // ── admin: grants (enriched — docs/03-api-contract.md gives request/response

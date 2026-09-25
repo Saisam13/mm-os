@@ -4,6 +4,7 @@ import type { AdminService, LaunchMode } from '../../api/types'
 import { Panel } from '../../components/Panel'
 import { EmptyState } from '../../components/EmptyState'
 import { rowActivation } from '../../lib/a11y'
+import { Link } from 'react-router-dom'
 
 export function ServicesAdminPage() {
   const [rows, setRows] = useState<AdminService[] | null>(null)
@@ -151,6 +152,9 @@ function ServiceDrawer({
       <button className="btn-act" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
 
       <div className="eyebrow" style={{ margin: '22px 0 8px' }}>Roles</div>
+      <p style={{ margin: '0 0 10px' }}>
+        <Link to={`/admin/roles?service=${service.slug}`}>Edit roles, permissions and import a role file →</Link>
+      </p>
       {service.roles.map((r) => (
         <details className="role" key={r.id}>
           <summary>{r.name} ({r.key})</summary>

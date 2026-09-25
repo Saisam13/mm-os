@@ -42,9 +42,10 @@ const REGISTRY: AdminService[] = [
     category: 'erp', base_url: 'https://minimines-uat.m.frappe.cloud', icon: 'database',
     launch_mode: 'external', has_public_surface: false, public_url: null,
     is_active: true, sort_order: 10,
+    permission_catalog: {},
     roles: [
-      { id: 'r1', key: 'user', name: 'User', description: 'Create and submit documents in your own department. Cannot approve.', is_default: true },
-      { id: 'r2', key: 'manager', name: 'Manager', description: 'Approve documents up to your band limit, and view every department.', is_default: false },
+      { id: 'r1', key: 'user', name: 'User', description: 'Create and submit documents in your own department. Cannot approve.', is_default: true, permissions: [] },
+      { id: 'r2', key: 'manager', name: 'Manager', description: 'Approve documents up to your band limit, and view every department.', is_default: false, permissions: [] },
     ],
   },
   {
@@ -54,9 +55,10 @@ const REGISTRY: AdminService[] = [
     // canEmbed): lets the Dashboard's embed path be exercised in the dev mock.
     launch_mode: 'embed', has_public_surface: true, public_url: 'https://itemcode.m-mines.com/lookup',
     is_active: true, sort_order: 20,
+    permission_catalog: {},
     roles: [
-      { id: 'r3', key: 'viewer', name: 'Viewer', description: 'Look up any item code and read the naming standard. No changes.', is_default: true },
-      { id: 'r4', key: 'admin', name: 'Administrator', description: 'Create and edit item codes. Changes are logged against your employee code.', is_default: false },
+      { id: 'r3', key: 'viewer', name: 'Viewer', description: 'Look up any item code and read the naming standard. No changes.', is_default: true, permissions: [] },
+      { id: 'r4', key: 'admin', name: 'Administrator', description: 'Create and edit item codes. Changes are logged against your employee code.', is_default: false, permissions: [] },
     ],
   },
   {
@@ -64,9 +66,10 @@ const REGISTRY: AdminService[] = [
     category: 'production', base_url: 'https://att.m-mines.com', icon: 'activity',
     launch_mode: 'handoff', has_public_surface: false, public_url: null,
     is_active: true, sort_order: 30,
+    permission_catalog: {},
     roles: [
-      { id: 'r5', key: 'viewer', name: 'Viewer', description: 'Read portfolios, scores and regulatory logs. Cannot start a run.', is_default: true },
-      { id: 'r6', key: 'runner', name: 'Runner', description: 'Start scoring runs, upload portfolios and change matcher settings.', is_default: false },
+      { id: 'r5', key: 'viewer', name: 'Viewer', description: 'Read portfolios, scores and regulatory logs. Cannot start a run.', is_default: true, permissions: [] },
+      { id: 'r6', key: 'runner', name: 'Runner', description: 'Start scoring runs, upload portfolios and change matcher settings.', is_default: false, permissions: [] },
     ],
   },
   {
@@ -74,10 +77,11 @@ const REGISTRY: AdminService[] = [
     category: 'operations', base_url: 'https://desk.m-mines.com', icon: 'inbox',
     launch_mode: 'handoff', has_public_surface: false, public_url: null,
     is_active: true, sort_order: 40,
+    permission_catalog: {},
     roles: [
-      { id: 'r7', key: 'requester', name: 'Requester', description: 'Raise requests, comment on your own, and track them.', is_default: true },
-      { id: 'r8', key: 'agent', name: 'Agent', description: 'Triage anything, assign, write proposals, resolve.', is_default: false },
-      { id: 'r9', key: 'admin', name: 'Administrator', description: 'Categories, reassignment, reopen closed requests.', is_default: false },
+      { id: 'r7', key: 'requester', name: 'Requester', description: 'Raise requests, comment on your own, and track them.', is_default: true, permissions: [] },
+      { id: 'r8', key: 'agent', name: 'Agent', description: 'Triage anything, assign, write proposals, resolve.', is_default: false, permissions: [] },
+      { id: 'r9', key: 'admin', name: 'Administrator', description: 'Categories, reassignment, reopen closed requests.', is_default: false, permissions: [] },
     ],
   },
   {
@@ -85,14 +89,16 @@ const REGISTRY: AdminService[] = [
     category: 'crm', base_url: 'https://crm.m-mines.com', icon: 'users',
     launch_mode: 'external', has_public_surface: false, public_url: null,
     is_active: true, sort_order: 50,
-    roles: [{ id: 'r10', key: 'user', name: 'User', description: 'Read and edit leads and opportunities you own.', is_default: true }],
+    permission_catalog: {},
+    roles: [{ id: 'r10', key: 'user', name: 'User', description: 'Read and edit leads and opportunities you own.', is_default: true, permissions: [] }],
   },
   {
     id: 'svc-analytics', slug: 'analytics', name: 'Analytics Hub', tagline: 'Sales and project analytics',
     category: 'analytics', base_url: 'https://analytics.m-mines.com', icon: 'bar-chart',
     launch_mode: 'handoff', has_public_surface: false, public_url: null,
     is_active: true, sort_order: 60,
-    roles: [{ id: 'r11', key: 'viewer', name: 'Viewer', description: 'Read dashboards. No export.', is_default: true }],
+    permission_catalog: {},
+    roles: [{ id: 'r11', key: 'viewer', name: 'Viewer', description: 'Read dashboards. No export.', is_default: true, permissions: [] }],
   },
 ]
 
@@ -411,7 +417,7 @@ export const mock: MmosApi = {
         tagline: payload.tagline ?? null, category: payload.category ?? 'internal',
         base_url: String(payload.base_url), icon: payload.icon ?? null,
         launch_mode: payload.launch_mode ?? 'handoff', has_public_surface: false, public_url: null,
-        is_active: true, sort_order: 100, roles: [],
+        is_active: true, sort_order: 100, permission_catalog: {}, roles: [],
       }
       REGISTRY.push(svc)
       return svc
@@ -427,9 +433,32 @@ export const mock: MmosApi = {
       await delay(200)
       const s = REGISTRY.find((x) => x.slug === slug)
       if (!s) throw new ApiRequestError(404, { error: 'not_found', message: 'Service not found.', request_id: 'mock' })
-      const r = { id: `r-${Date.now()}`, key: role.key, name: role.name, description: role.description ?? null, is_default: false }
+      const r = { id: `r-${Date.now()}`, key: role.key, name: role.name, description: role.description ?? null, is_default: false, permissions: [] }
       s.roles.push(r)
       return r
+    },
+    async updateServiceRole(slug, key, patch) {
+      await delay(150)
+      const r = REGISTRY.find((x) => x.slug === slug)?.roles.find((x) => x.key === key)
+      if (!r) throw new ApiRequestError(404, { error: 'role_not_found', message: 'Role not found.', request_id: 'mock' })
+      Object.assign(r, patch)
+      return r
+    },
+    async deleteServiceRole(slug, key) {
+      await delay(150)
+      const s = REGISTRY.find((x) => x.slug === slug)
+      if (s) s.roles = s.roles.filter((x) => x.key !== key)
+    },
+    async roleFileTemplate(slug) {
+      const s = REGISTRY.find((x) => x.slug === slug)!
+      return { committed: false, file: { service: slug, permissions: s.permission_catalog, roles: s.roles.map((r) => ({ key: r.key, name: r.name, description: r.description, default: r.is_default, permissions: r.permissions })) } }
+    },
+    async exportRoleFile(slug) {
+      return (await this.roleFileTemplate(slug)).file
+    },
+    async importRoleFile(slug) {
+      await delay(300)
+      return { dry_run: true, service: slug, catalog_changed: false, roles_created: [], roles_updated: [], roles_removed: [], grants_moved: [], grants_created: [], grants_changed: [], unchanged_people: 0, warnings: ['The dev mock does not apply role files.'] }
     },
     async rotateServiceKey() {
       await delay(300)

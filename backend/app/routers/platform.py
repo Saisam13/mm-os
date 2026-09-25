@@ -36,6 +36,11 @@ from ..models import (
     ServiceRole,
     User,
 )
+from ..roles_io import RoleFileError
+from ..roles_io import committed as committed_role_file
+from ..roles_io import apply as apply_role_file
+from ..roles_io import export as export_role_file
+from ..roles_io import validate as validate_role_file
 from ..security import new_service_key
 from .agent import _config_version
 
@@ -86,6 +91,14 @@ class RoleCreate(BaseModel):
     name: str
     description: str | None = None
     is_default: bool = False
+    permissions: list[str] = []
+
+
+class RolePatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    is_default: bool | None = None
+    permissions: list[str] | None = None
 
 
 class GrantCreate(BaseModel):
@@ -138,15 +151,23 @@ def _service_out(s: Service) -> dict:
         "health_url": s.health_url,
         "is_active": s.is_active,
         "sort_order": s.sort_order,
+        "permission_catalog": dict(s.permission_catalog or {}),
         "roles": [
             # `description` added by B1 -- seam inventory section A.4: brand/UI-DECISIONS.md
             # "role meanings shown inline" on the Access page has no data source without it.
             # `ServiceRole.description` already existed on the frozen model; it was simply
             # never serialized. `id` added alongside it so a role is addressable without a
             # second round-trip through (service_id, key).
-            {"id": str(r.id), "key": r.key, "name": r.name, "description": r.description, "is_default": r.is_default}
+            _role_out(r)
             for r in s.roles
         ],
+    }
+
+
+def _role_out(r: ServiceRole) -> dict:
+    return {
+        "id": str(r.id), "key": r.key, "name": r.name, "description": r.description,
+        "is_default": r.is_default, "permissions": list(r.permissions or []),
     }
 
 
@@ -352,12 +373,17 @@ def add_role(
         select(ServiceRole).where(ServiceRole.service_id == service.id, ServiceRole.key == body.key)
     ):
         raise HTTPException(409, detail={"error": "role_exists"})
+    _check_permissions(service, body.permissions)
+    if body.is_default:
+        _clear_default(service)
     role = ServiceRole(
         service_id=service.id,
         key=body.key,
         name=body.name,
         description=body.description,
         is_default=body.is_default,
+        permissions=list(dict.fromkeys(body.permissions)),
+        sort_order=max((r.sort_order for r in service.roles), default=0) + 10,
     )
     db.add(role)
     db.flush()
@@ -372,7 +398,159 @@ def add_role(
         key=role.key,
     )
     db.commit()
-    return {"id": str(role.id), "key": role.key, "name": role.name, "description": role.description, "is_default": role.is_default}
+    return _role_out(role)
+
+
+def _check_permissions(service: Service, perms: list[str]) -> None:
+    unknown = [p for p in perms if p not in (service.permission_catalog or {})]
+    if unknown:
+        raise HTTPException(422, detail={
+            "error": "unknown_permission",
+            "message": f"Not in {service.slug}'s permission list: {', '.join(unknown)}. "
+                       "Import a role file to declare new permissions.",
+        })
+
+
+def _clear_default(service: Service) -> None:
+    for r in service.roles:
+        r.is_default = False
+
+
+def _role_or_404(db: OrmSession, service: Service, key: str) -> ServiceRole:
+    role = db.scalar(
+        select(ServiceRole).where(ServiceRole.service_id == service.id, ServiceRole.key == key)
+    )
+    if role is None:
+        raise HTTPException(404, detail={"error": "role_not_found"})
+    return role
+
+
+@router.patch("/services/{slug}/roles/{key}")
+def patch_role(
+    slug: str,
+    key: str,
+    body: RolePatch,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: OrmSession = Depends(get_db),
+):
+    service = _service_or_404(db, slug)
+    role = _role_or_404(db, service, key)
+    changes = body.model_dump(exclude_unset=True)
+    if "permissions" in changes:
+        _check_permissions(service, changes["permissions"])
+        changes["permissions"] = list(dict.fromkeys(changes["permissions"]))
+    if changes.get("is_default"):
+        _clear_default(service)
+    for k, v in changes.items():
+        setattr(role, k, v)
+    audit(
+        db,
+        action="service.role_update",
+        actor_user_id=admin.id,
+        target_type="service_role",
+        target_id=str(role.id),
+        service_id=service.id,
+        ip=client_ip(request),
+        key=role.key,
+        fields=list(changes),
+    )
+    db.commit()
+    return _role_out(role)
+
+
+@router.delete("/services/{slug}/roles/{key}")
+def delete_role(
+    slug: str,
+    key: str,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: OrmSession = Depends(get_db),
+):
+    service = _service_or_404(db, slug)
+    role = _role_or_404(db, service, key)
+    held = db.scalar(select(Grant.id).where(Grant.service_role_id == role.id).limit(1))
+    if held:
+        raise HTTPException(409, detail={
+            "error": "role_in_use",
+            "message": "People still hold this role. Move them to another role first "
+                       "(a role file's 'replaces' does it in one step).",
+        })
+    audit(
+        db,
+        action="service.role_delete",
+        actor_user_id=admin.id,
+        target_type="service_role",
+        target_id=str(role.id),
+        service_id=service.id,
+        ip=client_ip(request),
+        key=role.key,
+    )
+    db.delete(role)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/services/{slug}/roles/export")
+def export_roles(
+    slug: str, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+):
+    return export_role_file(_service_or_404(db, slug))
+
+
+@router.get("/services/{slug}/roles/template")
+def role_file_template(
+    slug: str, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)
+):
+    """The role file committed for this service (app/role_files/), or the current state
+    exported as a starting point when there is none."""
+    service = _service_or_404(db, slug)
+    doc = committed_role_file(slug)
+    return {"committed": doc is not None, "file": doc if doc is not None else export_role_file(service)}
+
+
+@router.post("/services/{slug}/roles/import")
+def import_roles(
+    slug: str,
+    body: dict,
+    request: Request,
+    dry_run: bool = Query(True),
+    assign_mode: str | None = Query(None, pattern="^(missing|all)$"),
+    admin: User = Depends(require_admin),
+    db: OrmSession = Depends(get_db),
+):
+    """Apply a role file (app/roles_io.py). Defaults to a dry run: the whole import runs
+    against real rows and is then rolled back, so the preview is exactly what `dry_run=false`
+    will do."""
+    service = _service_or_404(db, slug)
+    try:
+        doc = validate_role_file(body, slug=slug)
+    except RoleFileError as e:
+        raise HTTPException(422, detail={
+            "error": "invalid_role_file", "message": "The role file has problems.", "problems": e.problems,
+        })
+    plan = apply_role_file(db, service, doc, actor=admin, dry_run=dry_run, assign_mode=assign_mode)
+    if dry_run:
+        db.rollback()
+        return {"dry_run": True, **plan.as_dict()}
+    audit(
+        db,
+        action="service.roles_import",
+        actor_user_id=admin.id,
+        target_type="service",
+        target_id=str(service.id),
+        service_id=service.id,
+        ip=client_ip(request),
+        roles_created=plan.roles_created,
+        roles_updated=plan.roles_updated,
+        roles_removed=plan.roles_removed,
+        grants_moved=len(plan.grants_moved),
+        grants_created=len(plan.grants_created),
+        grants_changed=len(plan.grants_changed),
+    )
+    db.commit()
+    db.refresh(service)
+    return {"dry_run": False, **plan.as_dict(), "service_after": _service_out(service)}
 
 
 @router.post("/services/{slug}/rotate-key")

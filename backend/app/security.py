@@ -72,7 +72,9 @@ def jwks() -> dict:
 
 
 # ── service tokens ────────────────────────────────────────────────────────
-def mint_service_token(*, user, employee, service_slug: str, roles: list[str]) -> tuple[str, str, int]:
+def mint_service_token(
+    *, user, employee, service_slug: str, roles: list[str], permissions: list[str] | None = None
+) -> tuple[str, str, int]:
     """Return (token, jti, ttl_seconds).
 
     `aud` is exactly one service, so a token minted for itemcode is worthless at att.
@@ -95,6 +97,9 @@ def mint_service_token(*, user, employee, service_slug: str, roles: list[str]) -
         "band": employee.band,
         "approval_level": employee.approval_level,
         "roles": roles,
+        # What the role may do at this service, from the role's permission list. A service
+        # that predates permissions ignores it and keeps deciding from `roles`.
+        "permissions": list(permissions or []),
         "platform_admin": user.is_platform_admin,
     }
     token = jwt.encode(

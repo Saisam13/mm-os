@@ -9,6 +9,33 @@ break something non-obvious — routine choices belong in code comments.
 
 ---
 
+## D-2026-09-25-1 · A role carries its permissions, and MM OS signs them into the token
+
+**Context.** A grant said *which* role someone had at a service (`viewer`, `admin`), but not
+what that role could do. Each service hard-coded the meaning, usually as "is it `admin`?", so
+adding a third role (Item Code Studio: associate / manager / admin) meant editing the
+service, and MM OS's admin had no way to see or change what a role allowed.
+
+**Decision.** A service declares a permission catalog, each role lists permissions from it,
+and the service token carries the holder's list as the `permissions` claim. The service
+enforces permissions, not role names. Roles, permissions and (optionally) who-gets-what are
+declared in a **role file** (`backend/app/role_files/<slug>.json`, format in
+`app/roles_io.py`), imported from Admin → Roles with a dry run first.
+
+**Consequences.**
+- Changing what a role can do is an MM OS edit, not a service deploy, as long as the
+  permission already exists in the service's code. A *new* permission still needs the service
+  to check it, which is why new permissions arrive only by role file, never a free-text box.
+- A service must fall back to its own role→permission map when the claim is missing **or
+  empty**. Otherwise updating MM OS before importing the role file locks everyone out.
+- Item Code Studio stores the role and permissions on its own session at sign-in, so a role
+  change takes effect the next time the person opens it from MM OS, not instantly. The
+  revocation written on a role change only stops new launches from old tokens.
+- `replaces` in a role file is the only safe way to retire a role people hold: it moves
+  their grants in the same transaction. Deleting a held role is refused.
+
+---
+
 ## D-2026-09-08-2 · The token issuer is a separate setting from the deployment's public URL
 
 **Context.** MM OS's single `issuer` setting was used both as the JWT `iss` claim and as the

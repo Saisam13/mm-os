@@ -121,10 +121,16 @@ class Service(Base):
     service_key_hash: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    # The things a role on this service can be allowed to do, as {"key": "meaning"}. Declared
+    # by the service's role file (app/roles_io.py); a role may only list keys from here.
+    permission_catalog: Mapped[dict] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
     created_at: Mapped[datetime] = _now()
 
     roles: Mapped[list["ServiceRole"]] = relationship(
-        back_populates="service", cascade="all, delete-orphan"
+        back_populates="service", cascade="all, delete-orphan",
+        order_by="ServiceRole.sort_order",
     )
     llm: Mapped["LlmRegistration"] = relationship(
         back_populates="service", uselist=False, cascade="all, delete-orphan"
@@ -146,6 +152,12 @@ class ServiceRole(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Permission keys from Service.permission_catalog. Carried in the service token as the
+    # `permissions` claim so the service can enforce them without calling MM OS.
+    permissions: Mapped[list] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 
     service: Mapped[Service] = relationship(back_populates="roles")
 

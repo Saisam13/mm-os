@@ -13,6 +13,7 @@ import { AccountsPage } from './pages/admin/AccountsPage'
 import { AccessPage } from './pages/admin/AccessPage'
 import { ServicesAdminPage } from './pages/admin/ServicesAdminPage'
 import { AuditPage } from './pages/admin/AuditPage'
+import { RolesPage } from './pages/admin/RolesPage'
 import { LlmPage } from './pages/admin/LlmPage'
 
 export function App() {
@@ -36,6 +37,7 @@ export function App() {
                 <Route path="people" element={<PeoplePage />} />
                 <Route path="accounts" element={<AccountsPage />} />
                 <Route path="services" element={<ServicesAdminPage />} />
+                <Route path="roles" element={<RolesPage />} />
                 <Route path="audit" element={<AuditPage />} />
               </Route>
             </Route>

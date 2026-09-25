@@ -83,7 +83,8 @@ def issue_service_token(
         )
 
     token, jti, ttl = mint_service_token(
-        user=user, employee=employee, service_slug=service.slug, roles=[grant.role.key]
+        user=user, employee=employee, service_slug=service.slug, roles=[grant.role.key],
+        permissions=list(grant.role.permissions or []),
     )
     audit(
         db,

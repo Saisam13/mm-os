@@ -43,6 +43,7 @@ from .db import SessionLocal
 from .models import AuditLog, Employee, Grant, Service, ServiceRole, User
 from .models import Session as ShellSession
 from .security import hash_pin
+from . import roles_io
 
 SHEET_NAME = "Employee Role & Access Map"
 DEFAULT_XLSX_PATH = Path(r"C:\Users\Anura\OneDrive\Desktop\Erp Imp\Employee_Role_Access_Mapping.xlsx")
@@ -307,10 +308,9 @@ SERVICES: list[dict] = [
         slug="itemcode", name="Item Code Studio", category="production",
         base_url=ITEMCODE_URL, launch_mode="handoff",
         has_public_surface=True,
-        roles=[
-            ("viewer", "Viewer", "Look up and browse item codes inside MM OS."),
-            ("admin", "Administrator", "Everything a viewer can do, plus create and edit item codes."),
-        ],
+        # The real roles, permissions and descriptions come from app/role_files/itemcode.json,
+        # applied by seed_services() right after the row is created.
+        roles=[],
     ),
     dict(
         slug="saleshub", name="MiniMines Sales Hub", category="production",
@@ -396,6 +396,13 @@ def seed_services(db: OrmSession) -> list[str]:
         db.flush()
         for key, name, description in roles:
             db.add(ServiceRole(service_id=svc.id, key=key, name=name, description=description))
+        role_file = roles_io.committed(svc.slug)
+        if role_file is not None:
+            doc = roles_io.validate(role_file)
+            doc["assign"] = None  # who-gets-what is an admin decision, never a seed side effect
+            db.flush()
+            db.refresh(svc)
+            roles_io.apply(db, svc, doc, actor=None, dry_run=False)
         created.append(spec["slug"])
     return created
 
@@ -708,6 +715,10 @@ def _ensure_grant(db: OrmSession, user: User, slug: str, key: str, *, granted_by
     if existing is not None:
         return
     role = db.scalar(select(ServiceRole).where(ServiceRole.service_id == service.id, ServiceRole.key == key))
+    if role is None and key == "viewer":
+        # Services whose roles come from a role file have no "viewer"; their default role is
+        # the equivalent entry-level access (e.g. itemcode's "associate").
+        role = db.scalar(select(ServiceRole).where(ServiceRole.service_id == service.id, ServiceRole.is_default))
     if role is None:
         raise RuntimeError(f"service role {slug}/{key} not found -- run seed_services() first")
     db.add(Grant(user_id=user.id, service_id=service.id, service_role_id=role.id, granted_by=granted_by, reason=reason))

@@ -4,7 +4,7 @@
 import type {
   AccountBulkResult, AccountCreateResult, AccountRosterRow,
   AdminEmployee, AdminGrant, AdminLlmRow, AdminService, AdminRole,
-  AuditEntry, FunctionalAccount, Me, PublicService, ServiceToken,
+  AuditEntry, FunctionalAccount, Me, PublicService, RoleFile, RoleImportPlan, ServiceToken,
 } from './types'
 
 export interface EmployeeFilter { q?: string; dept?: string; status?: string }
@@ -42,7 +42,12 @@ export interface MmosApi {
     listServices(): Promise<AdminService[]>
     createService(payload: Partial<AdminService>): Promise<AdminService>
     updateService(slug: string, patch: Partial<AdminService>): Promise<AdminService>
-    addServiceRole(slug: string, role: { key: string; name: string; description?: string }): Promise<AdminRole>
+    addServiceRole(slug: string, role: { key: string; name: string; description?: string; permissions?: string[] }): Promise<AdminRole>
+    updateServiceRole(slug: string, key: string, patch: { name?: string; description?: string | null; is_default?: boolean; permissions?: string[] }): Promise<AdminRole>
+    deleteServiceRole(slug: string, key: string): Promise<void>
+    roleFileTemplate(slug: string): Promise<{ committed: boolean; file: RoleFile }>
+    exportRoleFile(slug: string): Promise<RoleFile>
+    importRoleFile(slug: string, file: RoleFile, opts: { dryRun: boolean; assignMode?: 'missing' | 'all' }): Promise<RoleImportPlan>
     rotateServiceKey(slug: string): Promise<string>
 
     listGrants(f: GrantFilter): Promise<AdminGrant[]>

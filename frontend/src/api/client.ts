@@ -116,6 +116,17 @@ export const client: MmosApi = {
       req(`/api/admin/services/${slug}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     addServiceRole: (slug, role) =>
       req(`/api/admin/services/${slug}/roles`, { method: 'POST', body: JSON.stringify(role) }),
+    updateServiceRole: (slug, key, patch) =>
+      req(`/api/admin/services/${slug}/roles/${key}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    deleteServiceRole: (slug, key) =>
+      req(`/api/admin/services/${slug}/roles/${key}`, { method: 'DELETE' }),
+    roleFileTemplate: (slug) => req(`/api/admin/services/${slug}/roles/template`),
+    exportRoleFile: (slug) => req(`/api/admin/services/${slug}/roles/export`),
+    importRoleFile: (slug, file, { dryRun, assignMode }) =>
+      req(`/api/admin/services/${slug}/roles/import${qs({ dry_run: String(dryRun), assign_mode: assignMode })}`, {
+        method: 'POST',
+        body: JSON.stringify(file),
+      }),
     rotateServiceKey: (slug) =>
       req(`/api/admin/services/${slug}/rotate-key`, { method: 'POST' }).then((r: any) => r.service_key),
 
