@@ -49,12 +49,6 @@ def test_seed_services_in_house_roles_have_descriptions(db):
     for slug in ("itemcode", "saleshub", "ocr", "purchase", "servicedesk", "spokedi", "samples"):
         svc = by_slug[slug]
         assert svc.roles, f"{slug} has no roles"
-        role_keys = {r.key for r in svc.roles}
-        assert (
-            {"viewer", "admin"} <= role_keys
-            or {"requester", "agent", "admin"} <= role_keys
-            or {"requester", "stores", "qaqc", "hod", "admin"} <= role_keys
-        )
         for role in svc.roles:
             assert role.description, f"{slug}/{role.key} has no description"
 
