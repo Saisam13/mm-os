@@ -43,9 +43,21 @@ def test_normal_boot_without_flag_seeds_no_demo_accounts(db, monkeypatch):
     rc = seed.main(["--demo"])
     assert rc == 0
 
+    # Normal boot always creates the mandatory platform administrator. The
+    # opt-in guard applies to the demo roster, not to this operational account.
     employees, users = _counts()
-    assert employees == 0
-    assert users == 0
+    assert employees == 1
+    assert users == 1
+
+    s = SessionLocal()
+    try:
+        seeded_codes = set(s.scalars(select(Employee.employee_code)))
+        admin = s.scalar(select(User).where(User.login_email == seed.PLATFORM_ADMIN_EMAIL))
+        assert seeded_codes == {"MM-ITADMIN"}
+        assert admin is not None
+        assert admin.is_platform_admin is True
+    finally:
+        s.close()
 
 
 def test_flagged_boot_seeds_the_demo_accounts(db, monkeypatch):
