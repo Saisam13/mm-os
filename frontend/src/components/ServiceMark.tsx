@@ -8,6 +8,8 @@ import { deriveInitials } from '../lib/initials'
 const THIRD_PARTY_COLOR: Record<string, string> = {
   erpnext: '#2490EF',
   twenty: '#1A1A1A',
+  mail: '#EA4335',
+  'mail-dept': '#B3261E',
 }
 
 export function ServiceMark({

@@ -114,7 +114,7 @@ def _start_google_login(client) -> str:
     resp = client.get("/api/auth/google/start?next=/", follow_redirects=False)
     assert resp.status_code == 302
     qs = parse_qs(urlparse(resp.headers["location"]).query)
-    assert qs["hd"][0] == settings().google_hosted_domain  # the hint; not what decides
+    assert "hd" not in qs  # no hint: personal Gmail must be pickable; the id_token claim decides
     return qs["state"][0]
 
 
@@ -142,7 +142,9 @@ def test_google_callback_rejects_wrong_hd(client, monkeypatch, google_key, db):
     assert db.scalar(select(models.AuditLog).where(models.AuditLog.action == "login.google.denied")) is not None
 
 
-def test_google_callback_unknown_email_rejected(client, monkeypatch, google_key, db):
+def test_google_callback_unknown_company_email_goes_to_welcome_without_a_session(client, monkeypatch, google_key, db):
+    # Owner ruling 25 Sep 2026: an unknown company address is no longer refused -- it must
+    # confirm an employee code first (tests/test_onboarding.py), and gets no session until then.
     pem, jwk = google_key
     state = _start_google_login(client)
     token = _id_token(pem, jwk["kid"], **_default_claims(email="nobody@m-mines.com"))
@@ -150,8 +152,10 @@ def test_google_callback_unknown_email_rejected(client, monkeypatch, google_key,
 
     resp = client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
 
-    assert resp.status_code == 401
-    assert resp.json()["error"] == "unknown_user"
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/welcome"
+    assert settings().cookie_name not in resp.cookies
+    assert db.scalar(select(models.User).where(models.User.login_email == "nobody@m-mines.com")) is None
 
 
 def test_google_callback_inactive_user_rejected(client, monkeypatch, google_key, db, make_employee, make_user):

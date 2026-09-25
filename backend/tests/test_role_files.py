@@ -20,7 +20,7 @@ def test_committed_itemcode_file_is_valid(client, make_user, sign_in, make_servi
     assert r.status_code == 200
     assert r.json()["committed"] is True
     keys = [x["key"] for x in r.json()["file"]["roles"]]
-    assert keys == ["associate", "manager", "admin"]
+    assert keys == ["public", "associate", "manager", "admin"]
 
 
 def test_dry_run_changes_nothing(client, db, make_user, sign_in, make_service, make_grant):
@@ -34,7 +34,7 @@ def test_dry_run_changes_nothing(client, db, make_user, sign_in, make_service, m
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["dry_run"] is True
-    assert body["roles_created"] == ["associate", "manager"]
+    assert body["roles_created"] == ["public", "associate", "manager"]
     assert body["roles_removed"] == ["viewer"]
     assert len(body["grants_moved"]) == 1
 
@@ -69,14 +69,15 @@ def test_apply_moves_viewers_and_gives_everyone_a_role(
     assert role_of(old_viewer) == "associate"   # moved, not dropped
     assert role_of(admin) == "admin"            # platform admin rule
     assert role_of(approver) == "manager"       # is_approver rule
-    assert role_of(plain) == "associate"        # default
+    assert role_of(plain) == "public"           # default: the lowest, view-only level
     # the moved grant pushes a revocation so an old token's role cannot outlive the change
     assert db.scalar(select(models.Revocation).where(models.Revocation.subject == old_viewer.subject))
 
     after = {r["key"]: r for r in body["service_after"]["roles"]}
     assert "admin" in after["admin"]["permissions"]
     assert "admin" not in after["manager"]["permissions"]
-    assert after["associate"]["is_default"] is True
+    assert after["public"]["is_default"] is True
+    assert after["associate"]["is_default"] is False
 
 
 def test_missing_mode_keeps_hand_set_roles_and_all_mode_rederives(
@@ -96,7 +97,7 @@ def test_missing_mode_keeps_hand_set_roles_and_all_mode_rederives(
     rederive = client.post(
         "/api/admin/services/itemcode/roles/import?dry_run=true&assign_mode=all", json=committed("itemcode")
     ).json()
-    assert [(g["from"], g["to"]) for g in rederive["grants_changed"]] == [("manager", "associate")]
+    assert [(g["from"], g["to"]) for g in rederive["grants_changed"]] == [("manager", "public")]
 
 
 def test_people_override_by_employee_code(client, db, make_user, make_employee, sign_in, make_service):

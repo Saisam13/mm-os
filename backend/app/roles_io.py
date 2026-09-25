@@ -253,15 +253,91 @@ def _rule_matches(rule: dict, user: User, emp: Employee) -> bool:
     return True
 
 
-def role_for(assign: dict, user: User, emp: Employee) -> str | None:
+def source_for(assign: dict, user: User, emp: Employee) -> tuple[str | None, str | None]:
+    """(role, where it came from): "people", "rule", "default", or (None, None)."""
     people = {str(k).lower(): v for k, v in (assign.get("people") or {}).items()}
     for ident in (emp.employee_code, user.login_email, emp.work_email):
         if ident and ident.lower() in people:
-            return people[ident.lower()]
+            return people[ident.lower()], "people"
     for rule in assign.get("rules") or []:
         if _rule_matches(rule, user, emp):
-            return rule["role"]
-    return assign.get("default")
+            return rule["role"], "rule"
+    default = assign.get("default")
+    return (default, "default") if default else (None, None)
+
+
+def role_for(assign: dict, user: User, emp: Employee) -> str | None:
+    return source_for(assign, user, emp)[0]
+
+
+def assign_roles(
+    db: OrmSession,
+    service: Service,
+    assign: dict,
+    plan: RolePlan,
+    *,
+    actor: User | None,
+    mode: str = "missing",
+    people_override: bool = False,
+    only_user_ids: set[uuid.UUID] | None = None,
+    skip: set[str] | None = None,
+    reason: str = "role file",
+) -> None:
+    """Give people a role on `service` from an `assign` block. Shared by the role-file import
+    and the people-sheet upload (app/people_sheet.py), so there is one assignment engine.
+
+    `mode: "missing"` only touches people with no grant here; `"all"` re-derives everyone.
+    `people_override` lets a role named for a person in `people` replace an existing grant
+    even in "missing" mode (the sheet's "a filled-in cell wins, blanks only fill gaps").
+    `only_user_ids` limits the run to those users. `skip` holds "EMPLOYEE_CODE:slug" keys the
+    admin unticked in the dry run; those people are left exactly as they are."""
+    by_key = {r.key: r for r in db.scalars(select(ServiceRole).where(ServiceRole.service_id == service.id))}
+    rank = {r.key: r.sort_order for r in by_key.values()}
+    grants = {g.user_id: g for g in db.scalars(select(Grant).where(Grant.service_id == service.id))}
+    rows = db.execute(select(User, Employee).join(Employee, User.employee_id == Employee.id)).all()
+    matched_people: set[str] = set()
+    people_keys = {str(k).lower() for k in (assign.get("people") or {})}
+    now = datetime.now(timezone.utc)
+    for user, emp in rows:
+        if only_user_ids is not None and user.id not in only_user_ids:
+            continue
+        for ident in (emp.employee_code, user.login_email, emp.work_email):
+            if ident and ident.lower() in people_keys:
+                matched_people.add(ident.lower())
+        key, source = source_for(assign, user, emp)
+        if key is None:
+            continue
+        if skip and f"{emp.employee_code}:{service.slug}".lower() in skip:
+            plan.unchanged_people += 1
+            continue
+        target = by_key.get(key)
+        if target is None:
+            plan.warnings.append(f"{emp.employee_code}: {service.slug} has no role {key!r}")
+            continue
+        who = {"user_id": str(user.id), "name": emp.full_name, "employee_code": emp.employee_code,
+               "source": source}
+        g = grants.get(user.id)
+        if g is None:
+            db.add(Grant(user_id=user.id, service_id=service.id, service_role_id=target.id,
+                         granted_by=actor.id if actor else None, reason=reason))
+            plan.grants_created.append({**who, "role": key})
+        elif g.service_role_id != target.id and (mode == "all" or (people_override and source == "people")):
+            old_key = next((k for k, r in by_key.items() if r.id == g.service_role_id), "?")
+            g.service_role_id = target.id
+            g.granted_by = actor.id if actor else None
+            g.reason = reason
+            a, b = rank.get(old_key, 0), rank.get(key, 0)
+            direction = "up" if b > a else "down" if b < a else "change"  # equal: order unknown
+            plan.grants_changed.append({**who, "from": old_key, "to": key, "direction": direction})
+            db.add(Revocation(subject=user.subject, service_id=service.id, reason="role_changed",
+                              revoked_by=actor.id if actor else None, revoked_at=now,
+                              purge_after=now + _REVOCATION_TTL))
+        else:
+            plan.unchanged_people += 1
+    if only_user_ids is None:
+        for missing in sorted(people_keys - matched_people):
+            plan.warnings.append(f"assign.people: nobody in MM OS matches {missing!r}")
+    db.flush()
 
 
 # ── apply ─────────────────────────────────────────────────────────────────────
@@ -342,36 +418,6 @@ def apply(
 
     assign = doc.get("assign")
     if assign:
-        mode = assign_mode or assign.get("mode", "missing")
-        grants = {g.user_id: g for g in db.scalars(select(Grant).where(Grant.service_id == service.id))}
-        rows = db.execute(select(User, Employee).join(Employee, User.employee_id == Employee.id)).all()
-        matched_people: set[str] = set()
-        people_keys = {str(k).lower() for k in (assign.get("people") or {})}
-        for user, emp in rows:
-            for ident in (emp.employee_code, user.login_email, emp.work_email):
-                if ident and ident.lower() in people_keys:
-                    matched_people.add(ident.lower())
-            key = role_for(assign, user, emp)
-            if key is None:
-                continue
-            target = by_key[key]
-            who = {"user_id": str(user.id), "name": emp.full_name, "employee_code": emp.employee_code}
-            g = grants.get(user.id)
-            if g is None:
-                db.add(Grant(user_id=user.id, service_id=service.id, service_role_id=target.id,
-                             granted_by=actor.id if actor else None, reason="role file"))
-                plan.grants_created.append({**who, "role": key})
-            elif mode == "all" and g.service_role_id != target.id:
-                old_key = next((k for k, r in by_key.items() if r.id == g.service_role_id), "?")
-                g.service_role_id = target.id
-                g.granted_by = actor.id if actor else None
-                g.reason = "role file"
-                plan.grants_changed.append({**who, "from": old_key, "to": key})
-                _revoke(user.id, "role_changed")
-            else:
-                plan.unchanged_people += 1
-        for missing in sorted(people_keys - matched_people):
-            plan.warnings.append(f"assign.people: nobody in MM OS matches {missing!r}")
-        db.flush()
+        assign_roles(db, service, assign, plan, actor=actor, mode=assign_mode or assign.get("mode", "missing"))
 
     return plan

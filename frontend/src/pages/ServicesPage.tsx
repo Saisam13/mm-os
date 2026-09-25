@@ -15,6 +15,7 @@ export function ServicesPage() {
   const { me } = useAuth()
   const { launch, pending, error, clearError } = useLaunchService()
   if (!me) return null
+  const mail = me.mail ?? []
 
   return (
     <div className="page">
@@ -60,6 +61,27 @@ export function ServicesPage() {
           </div>
         </>
       )}
+
+      {mail.length > 0 ? (
+        <>
+          <div className="head" style={{ marginTop: 'var(--gap)' }}>
+            <h2>Mail</h2>
+          </div>
+          {/* Gmail will not load inside another site, so each mailbox opens in its own tab,
+              on that Google account if this browser is signed into it. */}
+          <div className="app-grid">
+            {mail.map((m) => (
+              <a key={m.email} className="app-tile" href={m.url} target="_blank" rel="noopener noreferrer" title={`Open ${m.email} in a new tab`} style={{ textDecoration: 'none' }}>
+                <span className="app-tile-icon">
+                  <ServiceMark slug={m.kind === 'own' ? 'mail' : 'mail-dept'} name={m.label} kind="third-party" size={72} />
+                </span>
+                <span className="app-tile-name">{m.label}</span>
+                <span className="app-tile-role" style={{ textTransform: 'none' }}>{m.email}</span>
+              </a>
+            ))}
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }

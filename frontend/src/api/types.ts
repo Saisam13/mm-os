@@ -46,6 +46,9 @@ export interface MeUser {
   band: string
   approval_level: string | null
   is_platform_admin: boolean
+  must_change_pin?: boolean
+  // true until the person has confirmed their employee code and set a PIN once
+  needs_onboarding?: boolean
 }
 
 export type LaunchMode = 'handoff' | 'embed' | 'external'
@@ -66,10 +69,27 @@ export interface MeBadges {
   approvals_waiting: number
 }
 
+// Gmail refuses to load inside another site, so mail tiles open a new tab.
+export interface MailTile {
+  kind: 'own' | 'department'
+  label: string
+  email: string
+  url: string
+}
+
 export interface Me {
   user: MeUser
   services: MeService[]
   badges: MeBadges
+  mail?: MailTile[]
+}
+
+// ── first sign-in (/api/auth/onboard) ─────────────────────────────────────
+export interface OnboardStatus {
+  mode: 'session' | 'personal' | 'new' | 'none'
+  email?: string | null
+  name?: string | null
+  has_pin?: boolean
 }
 
 // ── token handoff ────────────────────────────────────────────────────────
@@ -276,4 +296,41 @@ export interface AuditEntry {
 export interface Paginated<T> {
   items: T[]
   next_cursor: string | null
+}
+
+// ── people sheet (/api/admin/people/*) ────────────────────────────────────
+export interface PeopleImportRow {
+  row: number
+  employee_code: string
+  name: string
+  department: string
+  status: 'create' | 'update' | 'unchanged' | 'reject' | 'duplicate'
+  errors: string[]
+  fixes: string[]
+  notes: string[]
+  changes: { field: string; from: string | null; to: string | null }[]
+}
+
+export interface PeopleImportGrant {
+  kind: 'created' | 'changed' | 'removed'
+  key: string
+  employee_code: string
+  name: string
+  service: string
+  service_name: string
+  from: string | null
+  to: string | null
+  source: 'people' | 'rule' | 'default'
+  direction: 'up' | 'down' | 'change'
+}
+
+export interface PeopleImportResult {
+  dry_run: boolean
+  summary: Record<string, number>
+  rows: PeopleImportRow[]
+  grants: PeopleImportGrant[]
+  departments: { from: string; to: string; rows: number }[]
+  defaults: Record<string, Record<string, string>>
+  lowest_roles: Record<string, string | null>
+  warnings: string[]
 }

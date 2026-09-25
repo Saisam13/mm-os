@@ -6,8 +6,13 @@ import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { EmptyState } from '../../components/EmptyState'
 import { formatDate } from '../../lib/format'
 import { rowActivation } from '../../lib/a11y'
+import { PeopleUploadDialog } from './PeopleUpload'
 
-const DEPARTMENTS = ['CXO Office', 'P-Spoke', 'Project', 'Purchase', 'QA/QC', 'Projects']
+// Canonical departments (backend app/departments.py).
+const DEPARTMENTS = [
+  'BD & Operations', 'CXO Office', 'EHS', 'Finance', 'HR', 'IT', 'Logistics', 'N-Hub', 'P-Hub', 'P-Spoke',
+  'Projects', 'Purchase', 'QA/QC', 'R&D', 'StratOps', 'Stores', 'Unassigned',
+]
 const STATUSES = ['active', 'suspended', 'exited']
 
 export function PeoplePage() {
@@ -17,6 +22,8 @@ export function PeoplePage() {
   const [status, setStatus] = useState('')
   const [selected, setSelected] = useState<AdminEmployee | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -25,11 +32,14 @@ export function PeoplePage() {
       .then((r) => { if (!cancelled) setRows(r) })
       .catch(() => { if (!cancelled) setLoadError('Could not load employees.') })
     return () => { cancelled = true }
-  }, [q, dept, status])
+  }, [q, dept, status, reloadKey])
 
   return (
     <>
-      <div className="head"><h1>People</h1></div>
+      <div className="head">
+        <h1>People</h1>
+        <button className="btn-act" onClick={() => setUploading(true)}>Bulk upload</button>
+      </div>
 
       <div className="filters">
         <div className="field">
@@ -84,6 +94,13 @@ export function PeoplePage() {
           )}
         </div>
       </div>
+
+      {uploading ? (
+        <PeopleUploadDialog
+          onCancel={() => setUploading(false)}
+          onDone={() => { setUploading(false); setReloadKey((k) => k + 1) }}
+        />
+      ) : null}
 
       {selected ? (
         <PersonDrawer

@@ -9,6 +9,8 @@ export function ProtectedLayout() {
   const { me, loading } = useAuth()
   if (loading) return null
   if (!me) return <Navigate to="/" replace />
+  // First Google sign-in: confirm the employee code and set a PIN before anything else.
+  if (me.user.needs_onboarding) return <Navigate to="/welcome" replace />
   return (
     <div className="console">
       <TopNav />

@@ -4,7 +4,8 @@
 import type {
   AccountBulkResult, AccountCreateResult, AccountRosterRow,
   AdminEmployee, AdminGrant, AdminLlmRow, AdminService, AdminRole,
-  AuditEntry, FunctionalAccount, Me, PublicService, RoleFile, RoleImportPlan, ServiceToken,
+  AuditEntry, FunctionalAccount, Me, OnboardStatus, PeopleImportResult, PublicService, RoleFile,
+  RoleImportPlan, ServiceToken,
 } from './types'
 
 export interface EmployeeFilter { q?: string; dept?: string; status?: string }
@@ -18,6 +19,8 @@ export interface MmosApi {
   logout(): Promise<void>
   getMe(): Promise<Me>
   mintServiceToken(slug: string): Promise<ServiceToken>
+  onboardStatus(): Promise<OnboardStatus>
+  onboard(employee_code: string, pin: string): Promise<{ ok: true; next: string }>
 
   admin: {
     listEmployees(f: EmployeeFilter): Promise<AdminEmployee[]>
@@ -59,5 +62,9 @@ export interface MmosApi {
     toggleLlm(slug: string, enabled: boolean, reason: string): Promise<void>
 
     listAudit(f: AuditFilter): Promise<AuditEntry[]>
+
+    // people sheet: per-person accounts + access, dry run first
+    peopleTemplateUrl(): string
+    importPeople(file: File, opts: { dryRun: boolean; skip?: string[] }): Promise<PeopleImportResult>
   }
 }

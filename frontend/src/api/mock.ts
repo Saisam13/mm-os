@@ -332,6 +332,16 @@ export const mock: MmosApi = {
     }
   },
 
+  async onboardStatus() {
+    await delay(100)
+    return { mode: 'none' as const }
+  },
+
+  async onboard() {
+    await delay(200)
+    return { ok: true as const, next: '/services' }
+  },
+
   admin: {
     async listEmployees(f) {
       await delay(200)
@@ -517,6 +527,31 @@ export const mock: MmosApi = {
         if (f.actor && a.actor?.id !== f.actor) return false
         return true
       }).slice(0, f.limit || 100)
+    },
+
+    peopleTemplateUrl: () => '#mock-template',
+    async importPeople(_file, { dryRun }) {
+      await delay(400)
+      return {
+        dry_run: dryRun,
+        summary: { rows: 2, create: 1, rejected: 1, grants_created: 2 },
+        rows: [
+          { row: 2, employee_code: 'MM901', name: 'Test Person', department: 'Purchase', status: 'create' as const,
+            errors: [], fixes: ['ID MM00901 → MM901', 'department Purchase  → Purchase'], notes: [], changes: [] },
+          { row: 3, employee_code: 'NA', name: 'No Id', department: 'Finance', status: 'reject' as const,
+            errors: ['no usable employee ID (NA)'], fixes: [], notes: [], changes: [] },
+        ],
+        grants: [
+          { kind: 'created' as const, key: 'mm901:itemcode', employee_code: 'MM901', name: 'Test Person', service: 'itemcode',
+            service_name: 'Item Code Studio', from: null, to: 'associate', source: 'rule' as const, direction: 'up' as const },
+          { kind: 'created' as const, key: 'mm901:servicedesk', employee_code: 'MM901', name: 'Test Person', service: 'servicedesk',
+            service_name: 'Service Desk', from: null, to: 'requester', source: 'default' as const, direction: 'up' as const },
+        ],
+        departments: [{ from: 'PURCHASE ', to: 'Purchase', rows: 1 }],
+        defaults: { Purchase: { itemcode: 'associate' } },
+        lowest_roles: { itemcode: 'public', servicedesk: 'requester' },
+        warnings: [],
+      }
     },
   },
 }

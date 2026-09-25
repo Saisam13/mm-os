@@ -8,9 +8,11 @@ import { ApiRequestError } from './types'
 const BASE = import.meta.env.VITE_API_BASE || ''
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  // A FormData body sets its own multipart Content-Type (with the boundary).
+  const json = !(init?.body instanceof FormData)
   const res = await fetch(BASE + path, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+    headers: { ...(json ? { 'Content-Type': 'application/json' } : {}), ...(init?.headers || {}) },
     ...init,
   })
   if (!res.ok) {
@@ -67,6 +69,9 @@ export const client: MmosApi = {
   getMe: () => req('/api/me'),
   mintServiceToken: (slug) =>
     req('/api/token/service', { method: 'POST', body: JSON.stringify({ slug }) }),
+  onboardStatus: () => req('/api/auth/onboard'),
+  onboard: (employee_code, pin) =>
+    req('/api/auth/onboard', { method: 'POST', body: JSON.stringify({ employee_code, pin }) }),
 
   admin: {
     listEmployees: async (f) => {
@@ -145,5 +150,13 @@ export const client: MmosApi = {
 
     listAudit: (f) =>
       req<{ entries: any[]; next_cursor: string | null }>(`/api/admin/audit${qs(f)}`).then((r) => r.entries),
+
+    peopleTemplateUrl: () => `${BASE}/api/admin/people/template.xlsx`,
+    importPeople: (file, { dryRun, skip }) => {
+      const body = new FormData()
+      body.append('file', file)
+      if (skip && skip.length) body.append('skip', JSON.stringify(skip))
+      return req(`/api/admin/people/import${qs({ dry_run: String(dryRun) })}`, { method: 'POST', body })
+    },
   },
 }

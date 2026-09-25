@@ -19,6 +19,18 @@ decision:
     an authenticated session) is accepted regardless of domain.
 
 See handoff/a1-identity.md ## Deviations and ## Assumptions for the full reasoning.
+
+Owner ruling, 25 Sep 2026 (docs/16-decisions.md D-2026-09-25-2, app/onboarding.py): people are
+pre-created from the people sheet, and Google sign-in now has a first-time step instead of a
+flat refusal:
+
+  * official email matches an account -> signed in; the shell then asks them once to confirm
+    their employee code and set a PIN (`needs_onboarding` on /api/me, POST /onboard).
+  * a personal Gmail the sheet listed for someone -> no session yet; the person must type
+    that someone's employee code (and set a PIN) first. Afterwards it signs in directly.
+  * a company (hd) address with no account -> confirm an employee code, then an account in
+    department "Unassigned" with each service's lowest role.
+  * any other address -> refused, exactly as before (hd_mismatch).
 """
 from __future__ import annotations
 
@@ -30,18 +42,22 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode
 
+import uuid
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..config import settings
 from ..db import get_db
+from ..departments import UNASSIGNED, normalize_code
 from ..deps import audit, client_ip, current_session, current_user
 from ..models import Employee, Session, User
-from ..provision import clear_must_change, must_change_pin
+from ..onboarding import PersonalEmail, grant_lowest_roles, needs_onboarding
+from ..provision import clear_must_change, label_from_email, must_change_pin
 from ..ratelimit import check_rate_limit
 from ..security import hash_pin, new_session_token, session_expiry, verify_pin
 
@@ -206,7 +222,9 @@ def google_start(request: Request, next: str = "/"):
         "state": state,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
-        "hd": cfg.google_hosted_domain,  # convenience hint only -- the id_token claim decides
+        # No `hd` hint (25 Sep 2026): it narrows Google's account chooser to company accounts,
+        # and a personal Gmail listed in the people sheet must be pickable too. The hint never
+        # decided anything -- _complete_google_login checks the id_token's claims.
         "prompt": "select_account",
     }
     resp = RedirectResponse(f"{GOOGLE_AUTH_URL}?{urlencode(params)}", status_code=302)
@@ -314,29 +332,73 @@ def _fetch_google_claims(code: str, code_verifier: str) -> dict:
     return claims
 
 
+ONBOARD_COOKIE_NAME = "mmos_onboard"
+ONBOARD_COOKIE_TTL_SECONDS = 900  # 15 minutes to type a code and choose a PIN
+_ONBOARD_RATE_LIMIT = 20
+WELCOME_PATH = "/welcome"
+
+
+def _to_welcome(fields: dict, *, mode: str, email: str, name: str | None, uid=None):
+    """No session yet: park the verified Google identity in a short-lived signed cookie and
+    send the browser to the confirm-your-code page."""
+    payload = {
+        "mode": mode, "email": email, "name": name or "",
+        "next": _safe_next(fields.get("next")),
+        "exp": str(int(time.time()) + ONBOARD_COOKIE_TTL_SECONDS),
+    }
+    if uid is not None:
+        payload["uid"] = str(uid)
+    resp = RedirectResponse(WELCOME_PATH, status_code=302)
+    resp.set_cookie(ONBOARD_COOKIE_NAME, _sign_oauth_cookie(urlencode(payload)),
+                    **_cookie_kwargs(max_age=ONBOARD_COOKIE_TTL_SECONDS))
+    _clear_oauth_cookie(resp)
+    return resp
+
+
+def _read_onboard_cookie(request: Request) -> dict | None:
+    raw = request.cookies.get(ONBOARD_COOKIE_NAME)
+    fields = _read_oauth_cookie(raw) if raw else None
+    if not fields or int(fields.get("exp", 0)) < time.time():
+        return None
+    return fields
+
+
+def _clear_onboard_cookie(response) -> None:
+    response.delete_cookie(ONBOARD_COOKIE_NAME, path="/", domain=settings().cookie_domain or None)
+
+
 def _complete_google_login(request: Request, db: OrmSession, fields: dict, claims: dict, ip: str):
-    """Plain (unauthenticated) Google sign-in. MM OS never auto-provisions an account on
-    login (docs/04) -- this branch only ever finds an existing user or fails. hd is
-    enforced here, but only when no existing user's login_email already matches: a
-    personal address that has been linked from an authenticated session (see
-    _complete_google_link) is looked up and accepted the same as a corporate one.
+    """Plain (unauthenticated) Google sign-in. An address that is some user's login_email
+    signs straight in, whatever its domain (a linked personal address included, see
+    _complete_google_link). Otherwise: a personal address the people sheet listed goes to
+    the confirm-your-code step for that person; a company (hd) address goes to the
+    confirm-your-code step for a new Unassigned account; anything else is refused.
     """
     cfg = settings()
-    email = claims.get("email")
-    user = db.scalar(select(User).where(User.login_email == email)) if email else None
+    email = (claims.get("email") or "").strip().lower()
+    user = db.scalar(select(User).where(func.lower(User.login_email) == email)) if email else None
+
+    if user is None and email:
+        listed = db.get(PersonalEmail, email)
+        owner = db.get(User, listed.user_id) if listed else None
+        if owner is not None and owner.is_active:
+            if listed.verified_at is not None:
+                user = owner
+            else:
+                audit(db, action="login.google.onboard", actor_user_id=owner.id, ip=ip, mode="personal")
+                db.commit()
+                return _to_welcome(fields, mode="personal", email=email, name=claims.get("name"), uid=owner.id)
 
     if user is None:
-        # Nobody has this exact email linked. Since we never auto-provision, this always
-        # ends in unknown_user -- but hd is checked first so a non-corporate identity is
-        # rejected distinctly (hd_mismatch), matching the original architecture decision
-        # and its acceptance test.
+        # hd is checked first so a non-corporate identity is always rejected distinctly
+        # (hd_mismatch): an unknown personal address never gets an account.
         if claims.get("hd") != cfg.google_hosted_domain:
             audit(db, action="login.google.denied", ip=ip, reason="hd_mismatch")
             db.commit()
             raise HTTPException(401, {"error": "hd_mismatch", "message": "Sign in with your MiniMines Google account."})
-        audit(db, action="login.google.denied", ip=ip, reason="unknown_user", email=email)
+        audit(db, action="login.google.onboard", ip=ip, mode="new", email=email)
         db.commit()
-        raise HTTPException(401, {"error": "unknown_user", "message": "No MM OS account for this email."})
+        return _to_welcome(fields, mode="new", email=email, name=claims.get("name"))
 
     if not user.is_active:
         # Same generic signal as "no such email" -- never confirms a deactivated account exists.
@@ -519,6 +581,176 @@ def change_pin(
     audit(db, action="pin.change", actor_user_id=user.id, ip=ip)
     db.commit()
     return {"ok": True, "must_change": False}
+
+
+# -- first sign-in: confirm the employee code, set a PIN -------------------------
+def _session_user(request: Request, db: OrmSession) -> User | None:
+    try:
+        return current_user(current_session(request, db), db)
+    except HTTPException:
+        return None
+
+
+def _find_employee_by_code(db: OrmSession, code: str) -> Employee | None:
+    """Exact match first, then by normalised form, so an older record stored as "MM05"
+    still matches a typed "MM5"."""
+    emp = db.scalar(select(Employee).where(Employee.employee_code == code))
+    if emp is not None:
+        return emp
+    return next((e for e in db.scalars(select(Employee)) if normalize_code(e.employee_code) == code), None)
+
+
+def _same_code(stored: str, typed: str) -> bool:
+    """MM codes compare by number (MM05 == MM5 == mm-005); anything else (MM-ITADMIN)
+    compares as typed, ignoring case."""
+    a, b = normalize_code(stored), normalize_code(typed)
+    if a and b:
+        return a == b
+    return stored.strip().upper() == typed.strip().upper()
+
+
+def _set_pin(db: OrmSession, user: User, pin: str) -> None:
+    try:
+        user.pin_hash = hash_pin(pin)
+    except ValueError as exc:
+        raise HTTPException(422, {"error": "bad_pin", "message": str(exc)})
+    user.pin_set_at = datetime.now(timezone.utc)
+    user.failed_pin_attempts = 0
+    user.locked_until = None
+    clear_must_change(db, user)
+
+
+_CODE_MISMATCH = {
+    "error": "code_mismatch",
+    "message": "That employee code does not match our records for this Google account. Check it, or contact IT.",
+}
+_CODE_TAKEN = {
+    "error": "code_taken",
+    "message": "That employee code already belongs to another MM OS account. Contact IT.",
+}
+
+
+@router.get("/onboard")
+def onboard_status(request: Request, db: OrmSession = Depends(get_db)):
+    """What the welcome page should ask for. `mode` is "personal" or "new" while a Google
+    identity is waiting for its code (no session yet), "session" when a signed-in person has
+    not set a PIN yet, and "none" when there is nothing to do."""
+    pending = _read_onboard_cookie(request)
+    if pending:
+        has_pin = False
+        if pending["mode"] == "personal":
+            owner = db.get(User, uuid.UUID(pending["uid"]))
+            has_pin = bool(owner and owner.pin_set_at and not must_change_pin(db, owner))
+        return {"mode": pending["mode"], "email": pending["email"], "name": pending.get("name") or None,
+                "has_pin": has_pin}
+    user = _session_user(request, db)
+    if user is not None and needs_onboarding(user):
+        emp = db.get(Employee, user.employee_id)
+        return {"mode": "session", "email": user.login_email, "name": emp.full_name if emp else None,
+                "has_pin": False}
+    return {"mode": "none"}
+
+
+@router.post("/onboard")
+def onboard(request: Request, body: dict, db: OrmSession = Depends(get_db)):
+    """Confirm the employee code and set a PIN. The code is checked against the record the
+    Google identity (or the live session) already points at, so typing someone else's code
+    never attaches you to their account."""
+    ip = client_ip(request)
+    if check_rate_limit(db, bucket=f"onboard:{ip}", limit=_ONBOARD_RATE_LIMIT, window_seconds=60.0):
+        raise HTTPException(429, {"error": "rate_limited", "message": "Too many attempts. Try again shortly."})
+    typed = str(body.get("employee_code") or "").strip()
+    code = normalize_code(typed)
+    pin = str(body.get("pin") or "")
+    if not typed:
+        raise HTTPException(422, {"error": "bad_code", "message": "Enter your employee code, e.g. MM115."})
+
+    pending = _read_onboard_cookie(request)
+    if pending is None:
+        user = _session_user(request, db)
+        if user is None:
+            raise HTTPException(401, {"error": "onboard_expired", "message": "Sign in with Google again."})
+        if not needs_onboarding(user):
+            raise HTTPException(409, {"error": "already_onboarded", "message": "You have already set your PIN."})
+        emp = db.get(Employee, user.employee_id)
+        if not _same_code(emp.employee_code, typed):
+            audit(db, action="onboard.failed", actor_user_id=user.id, ip=ip, reason="code_mismatch")
+            db.commit()
+            raise HTTPException(422, _CODE_MISMATCH)
+        _set_pin(db, user, pin)
+        grant_lowest_roles(db, user)  # never nothing: fills gaps only, keeps every existing role
+        audit(db, action="onboard.session", actor_user_id=user.id, ip=ip)
+        db.commit()
+        return {"ok": True, "next": "/services"}
+
+    email = pending["email"]
+    next_path = _safe_next(pending.get("next"))
+    if next_path == "/":
+        next_path = "/services"
+
+    if pending["mode"] == "personal":
+        user = db.get(User, uuid.UUID(pending["uid"]))
+        listed = db.get(PersonalEmail, email)
+        if user is None or not user.is_active or listed is None or listed.user_id != user.id:
+            raise HTTPException(401, {"error": "onboard_expired", "message": "Sign in with Google again."})
+        emp = db.get(Employee, user.employee_id)
+        if not _same_code(emp.employee_code, typed):
+            audit(db, action="onboard.failed", actor_user_id=user.id, ip=ip, reason="code_mismatch", mode="personal")
+            db.commit()
+            raise HTTPException(422, _CODE_MISMATCH)
+        if user.pin_set_at is not None and not must_change_pin(db, user):
+            # They already chose a PIN (e.g. via their official email): it is the proof here,
+            # never overwritten by whoever holds the personal address.
+            if not verify_pin(pin, user.pin_hash or ""):
+                audit(db, action="onboard.failed", actor_user_id=user.id, ip=ip, reason="bad_pin", mode="personal")
+                db.commit()
+                raise HTTPException(401, GENERIC_PIN_ERROR)
+        else:
+            _set_pin(db, user, pin)
+        listed.verified_at = datetime.now(timezone.utc)
+        grant_lowest_roles(db, user)
+        action = "onboard.personal"
+    elif pending["mode"] == "new":
+        if code is None:
+            raise HTTPException(422, {"error": "bad_code", "message": "Employee codes look like MM115."})
+        if db.scalar(select(User).where(func.lower(User.login_email) == email)):
+            raise HTTPException(409, {"error": "already_onboarded", "message": "This Google account already has MM OS access. Sign in again."})
+        emp = _find_employee_by_code(db, code)
+        by_email = db.scalar(select(Employee).where(func.lower(Employee.work_email) == email))
+        if by_email is not None and (emp is None or emp.id != by_email.id):
+            audit(db, action="onboard.failed", ip=ip, reason="code_mismatch", mode="new", email=email)
+            db.commit()
+            raise HTTPException(422, _CODE_MISMATCH)
+        if emp is not None:
+            taken = db.scalar(select(User).where(User.employee_id == emp.id))
+            if taken is not None or (emp.work_email and emp.work_email.lower() != email):
+                audit(db, action="onboard.failed", ip=ip, reason="code_taken", mode="new", email=email)
+                db.commit()
+                raise HTTPException(409, _CODE_TAKEN)
+        else:
+            emp = Employee(
+                employee_code=code, full_name=pending.get("name") or label_from_email(email),
+                work_email=email, hr_department=UNASSIGNED, division=UNASSIGNED, job_title="",
+                band="N/A", notes="self-registered at first Google sign-in",
+            )
+            db.add(emp)
+            db.flush()
+        user = User(employee_id=emp.id, auth_type="google", login_email=email, is_active=True)
+        db.add(user)
+        db.flush()
+        _set_pin(db, user, pin)
+        grant_lowest_roles(db, user)
+        action = "onboard.new"
+    else:
+        raise HTTPException(401, {"error": "onboard_expired", "message": "Sign in with Google again."})
+
+    raw = _issue_session(db, user, request)
+    audit(db, action=action, actor_user_id=user.id, ip=ip)
+    db.commit()
+    resp = JSONResponse({"ok": True, "next": next_path})
+    _set_session_cookie(resp, raw)
+    _clear_onboard_cookie(resp)
+    return resp
 
 
 # -- logout --------------------------------------------------------------------

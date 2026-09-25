@@ -18,10 +18,16 @@
   },
   "roles": [
     {
+      "key": "public",
+      "name": "Public",
+      "description": "View only: search, view and decode item codes. The lowest level, given to anyone who has not been set up for Item Code.",
+      "default": true,
+      "permissions": ["view"]
+    },
+    {
       "key": "associate",
       "name": "Associate",
       "description": "Finds and creates item codes, edits and deactivates items, and sends group changes and ERPNext pushes for approval.",
-      "default": true,
       "permissions": ["view", "item.create", "item.edit", "item.deactivate", "group.request", "push.request"],
       "replaces": ["viewer"]
     },
@@ -45,6 +51,6 @@
       {"platform_admin": true, "role": "admin"},
       {"is_approver": true, "role": "manager"}
     ],
-    "default": "associate"
+    "default": "public"
   }
 }

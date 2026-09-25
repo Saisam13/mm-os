@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { ProtectedLayout, AdminGuard } from './routes/Guards'
 import { EntryPage } from './pages/EntryPage'
+import { WelcomePage } from './pages/WelcomePage'
 import { Dashboard } from './pages/Dashboard'
 import { ServicesPage } from './pages/ServicesPage'
 import { ServiceOpenPage } from './pages/ServiceOpenPage'
@@ -22,6 +23,7 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<EntryPage />} />
+          <Route path="/welcome" element={<WelcomePage />} />
 
           <Route element={<ProtectedLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />

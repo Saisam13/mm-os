@@ -380,6 +380,13 @@ SERVICES: list[dict] = [
 ]
 
 
+# The lowest role an unconfigured person gets on each service (owner decision 25 Sep 2026,
+# docs/16-decisions.md D-2026-09-25-2). A service missing here gives them nothing; Item Code
+# declares its own ("public") in its role file. On a live database the same thing is the
+# "Make default" toggle in Admin -> Roles.
+LOWEST_ROLES: dict[str, str] = {"servicedesk": "requester", "spokedi": "viewer", "ocr": "viewer"}
+
+
 def seed_services(db: OrmSession) -> list[str]:
     """Idempotent: only creates slugs that don't already exist. Never updates or deletes an
     existing row, so a base_url (or anything else) an admin has since hand-edited is never
@@ -394,8 +401,9 @@ def seed_services(db: OrmSession) -> list[str]:
         svc = Service(**spec)
         db.add(svc)
         db.flush()
-        for key, name, description in roles:
-            db.add(ServiceRole(service_id=svc.id, key=key, name=name, description=description))
+        for order, (key, name, description) in enumerate(roles):
+            db.add(ServiceRole(service_id=svc.id, key=key, name=name, description=description,
+                               is_default=LOWEST_ROLES.get(svc.slug) == key, sort_order=(order + 1) * 10))
         role_file = roles_io.committed(svc.slug)
         if role_file is not None:
             doc = roles_io.validate(role_file)

@@ -93,5 +93,5 @@ def test_seed_services_is_idempotent_and_preserves_hand_edits(db):
     assert itemcode_after.base_url == edited_url  # hand edit survived the re-run
 
     # And role rows weren't duplicated either.
-    # (itemcode seeds associate, manager, admin from app/role_files/itemcode.json)
-    assert [r.key for r in itemcode_after.roles] == ["associate", "manager", "admin"]
+    # (itemcode seeds public, associate, manager, admin from app/role_files/itemcode.json)
+    assert [r.key for r in itemcode_after.roles] == ["public", "associate", "manager", "admin"]

@@ -9,6 +9,51 @@ break something non-obvious — routine choices belong in code comments.
 
 ---
 
+## D-2026-09-25-2 · One account per person, first sign-in checks the employee code, and nobody lands with nothing
+
+**Context.** On 31 Aug MM OS accounts were meant to be shared functional mailboxes only. The
+company then collected a per-person form (name, ID, department, official and personal email),
+and the owner wants everyone brought in from one sheet, signing in with Google, with access
+decided by the sheet and their department.
+
+**Decision** (owner, 25 Sep 2026):
+- **One account per person**, pre-created from the people sheet (Admin → People → Bulk upload,
+  `app/people_sheet.py`). Functional mailboxes stay as their own accounts for shared desks.
+- **Google sign-in.** The official (company) email signs in directly. Everyone then confirms
+  their employee code and chooses a PIN once (`/welcome`, `POST /api/auth/onboard`), so PIN
+  sign-in works too. A personal Gmail signs in only if the sheet lists it for that person
+  **and** the person types that person's employee code the first time (`personal_emails`,
+  migration 0004). A company address not in the sheet gets department `Unassigned` and each
+  service's lowest role. Any other address is refused.
+- **Lowest role, per service.** Unconfigured means the service's lowest role, never nothing
+  and never more: the role marked default (Admin → Roles → Make default). Agreed: Item Code
+  `public` (new, view only), Service Desk `requester`, Spoke Daily Input `viewer`, OCR
+  `viewer`; none for Sales Hub, Purchase Analytics and Sample Tracking. Every service keeps
+  such a public level.
+- **Precedence.** A filled-in cell in the sheet wins and replaces a role; a blank cell takes
+  the department default (the sheet's second tab), else the lowest role, and only fills a gap;
+  `none` removes access. The dry run lists every change, and downgrades start unticked. The
+  assignment runs through `roles_io.assign_roles`, the role files' engine.
+- **Departments** are stored under one canonical name (`app/departments.py`). Stores and
+  Logistics are separate; material management is Stores; business development and BD &
+  operations are one department; engineering, maintenance and Second Life are P-Spoke;
+  production is P-Hub. Employee codes are `MM` + the number, with no zero padding or dashes.
+- **Mail tiles.** Services shows the person's own mailbox and their department's shared
+  mailboxes. Gmail refuses to load inside another site, so they open in a new tab.
+
+**Consequences.**
+- The personal-email route is safe only because the code check happens once: listing an
+  address in the sheet (which came from a self-filled form) is not enough on its own. If the
+  person already has a PIN, the personal route asks for it instead of setting a new one.
+- One company address typed by several people is treated as a shared mailbox and used as
+  nobody's sign-in.
+- Google sign-in no longer sends the `hd` hint, so personal accounts can be picked. The
+  hosted-domain check on the returned identity is unchanged and still decides.
+- Item Code v2 must accept `public` (`core/rbac.py`, branch `mmos-retrofit`) before MM OS
+  hands it out, or those people are refused there (the same as having no role).
+
+---
+
 ## D-2026-09-25-1 · A role carries its permissions, and MM OS signs them into the token
 
 **Context.** A grant said *which* role someone had at a service (`viewer`, `admin`), but not

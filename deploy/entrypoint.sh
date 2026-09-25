@@ -16,10 +16,18 @@ if [ "$(id -u)" = "0" ]; then
   exec gosu mmos "$0" "$@"
 fi
 
-if [ "${MMOS_MIGRATE_ON_BOOT:-false}" = "true" ]; then
-  echo "[boot] alembic upgrade head"
-  python -m alembic upgrade head
-fi
+# Accept true / 1 / yes in any case, with stray quotes or spaces stripped: on 25 Sep the flag was
+# set in Coolify and migrations still did not run, and the log said nothing about why.
+migrate_flag=$(printf '%s' "${MMOS_MIGRATE_ON_BOOT:-}" | tr -d "\"' " | tr '[:upper:]' '[:lower:]')
+case "$migrate_flag" in
+  true|1|yes)
+    echo "[boot] alembic upgrade head"
+    python -m alembic upgrade head
+    ;;
+  *)
+    echo "[boot] skipping migrations: MMOS_MIGRATE_ON_BOOT is '${MMOS_MIGRATE_ON_BOOT:-<unset>}' (set it to true)"
+    ;;
+esac
 
 if [ "${MMOS_SEED_ON_BOOT:-false}" = "true" ]; then
   echo "[boot] seeding from the committed demo fixture (idempotent)"

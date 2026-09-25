@@ -19,10 +19,43 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..db import get_db
 from ..deps import current_employee, current_user
+from urllib.parse import quote
+
 from ..models import Employee, Grant, Service, ServiceRole, User
-from ..provision import must_change_pin
+from ..onboarding import needs_onboarding
+from ..provision import FUNCTIONAL_JOB_TITLE, must_change_pin
 
 router = APIRouter()
+
+GMAIL_URL = "https://mail.google.com/mail/u/?authuser={email}"
+
+
+def _mail_tiles(db: OrmSession, user: User, employee: Employee) -> list[dict]:
+    """The person's own mailbox, then their department's shared (functional) mailboxes.
+
+    Gmail sends X-Frame-Options and refuses to load inside another site, so these are
+    new-tab links, not embeds. `authuser` makes Gmail open that account if the browser is
+    signed into it; otherwise Google asks which account to use."""
+    own = user.login_email or employee.work_email
+    tiles = []
+    if own:
+        tiles.append({"kind": "own", "label": "My mail", "email": own, "url": GMAIL_URL.format(email=quote(own))})
+    shared = db.execute(
+        select(Employee.work_email)
+        .join(User, User.employee_id == Employee.id)
+        .where(
+            Employee.job_title == FUNCTIONAL_JOB_TITLE,
+            Employee.hr_department == employee.hr_department,
+            Employee.work_email.is_not(None),
+            User.is_active.is_(True),
+        )
+        .order_by(Employee.work_email)
+    ).scalars().all()
+    for addr in shared:
+        if addr != own:
+            tiles.append({"kind": "department", "label": f"{employee.hr_department} mail", "email": addr,
+                          "url": GMAIL_URL.format(email=quote(addr))})
+    return tiles
 
 
 @router.get("/public/services")
@@ -98,8 +131,12 @@ def me(
             # True while the person is still on a provisioned one-time PIN -- the shell routes
             # them to the change-PIN screen (routers/auth.py POST /api/auth/pin/change).
             "must_change_pin": must_change_pin(db, user),
+            # True until they have confirmed their employee code and set a PIN once (first
+            # Google sign-in, app/onboarding.py) -- the shell routes them to /welcome.
+            "needs_onboarding": needs_onboarding(user),
         },
         "services": services,
+        "mail": _mail_tiles(db, user, employee),
         "badges": {
             # A5 (Service Desk) owns the real open-ticket count; this stays 0 until that
             # service reports it.

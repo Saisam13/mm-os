@@ -27,6 +27,7 @@ from app.models import Base  # noqa: E402
 # 0002) so `target_metadata` is complete and `alembic check` sees no phantom drift.
 import app.llm_control  # noqa: E402,F401
 import app.provision  # noqa: E402,F401
+import app.onboarding  # noqa: E402,F401
 
 config = context.config
 if config.config_file_name is not None:

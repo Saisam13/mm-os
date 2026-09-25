@@ -8,11 +8,16 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
+import io
+import json
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import people_sheet
 from ..db import get_db
 from ..deps import audit, client_ip, require_admin
 from ..models import Employee, Revocation, Session, User
@@ -188,6 +193,57 @@ def import_employees(
         db.commit()
         result["committed"] = True
     return result
+
+
+# ── people sheet (per-person accounts + access, app/people_sheet.py) ─────────────
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/people/template.xlsx")
+def people_template(admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)):
+    """An empty people sheet whose dropdowns come from the live services and roles."""
+    data = people_sheet.build_workbook(people_sheet.service_columns(db))
+    return Response(data, media_type=XLSX,
+                    headers={"Content-Disposition": 'attachment; filename="mmos-people-sheet.xlsx"'})
+
+
+@router.post("/people/import")
+def people_import(
+    file: UploadFile,
+    request: Request,
+    dry_run: bool = Query(True),
+    skip: str = Form(""),
+    admin: User = Depends(require_admin),
+    db: OrmSession = Depends(get_db),
+):
+    """Dry run by default: the whole import runs against real rows and is rolled back, so the
+    preview is exactly what `dry_run=false` does. The apply re-reads the file rather than
+    trusting the preview; `skip` is a JSON list of "EMPLOYEE_CODE:slug" access changes the
+    admin unticked, which are left as they are."""
+    services = people_sheet.service_columns(db)
+    try:
+        parsed = people_sheet.parse_workbook(io.BytesIO(file.file.read()), services, people_sheet.role_names(db))
+    except Exception as exc:  # openpyxl raises a zoo of types for a file that is not a workbook
+        raise HTTPException(422, {"error": "bad_workbook", "message": str(exc) or "That file is not a readable .xlsx workbook."})
+    try:
+        keys = set(json.loads(skip)) if skip else set()
+    except (ValueError, TypeError):
+        raise HTTPException(422, {"error": "bad_skip", "message": "skip must be a JSON list."})
+    try:
+        result = people_sheet.run_import(db, parsed, services, actor=admin, skip=keys)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, {"error": "people_conflict", "message": "A row conflicts with an existing account. Run the dry run again."})
+    if dry_run:
+        db.rollback()
+        return {"dry_run": True, **result}
+    s = result["summary"]
+    audit(db, action="people.import", actor_user_id=admin.id, ip=client_ip(request),
+          created=s.get("create", 0), updated=s.get("update", 0), rejected=s.get("rejected", 0),
+          grants_created=s.get("grants_created", 0), grants_changed=s.get("grants_changed", 0),
+          grants_removed=s.get("grants_removed", 0), skipped=len(keys))
+    db.commit()
+    return {"dry_run": False, **result}
 
 
 # ── users ────────────────────────────────────────────────────────────────────
