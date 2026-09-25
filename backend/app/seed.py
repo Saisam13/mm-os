@@ -360,7 +360,10 @@ SERVICES: list[dict] = [
     ),
     dict(
         slug="samples", name="Sample Tracking", category="production",
-        base_url=SAMPLES_URL, launch_mode="handoff",
+        # Sample Tracking supports cross-site iframe sessions (Secure,
+        # SameSite=None) and does not deny framing. Keep this aligned with the
+        # live registry so the MMOS dashboard uses the authenticated embed.
+        base_url=SAMPLES_URL, launch_mode="embed",
         roles=[
             ("requester", "Requester", "Create sample requests and track their status and outcomes."),
             ("stores", "Stores", "Receive, label, store and transfer samples with custody records."),

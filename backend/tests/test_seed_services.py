@@ -32,6 +32,10 @@ def test_seed_services_in_house_vs_third_party_launch_mode(db):
     for slug in ("itemcode", "saleshub", "ocr", "purchase", "servicedesk", "spokedi", "samples"):
         assert by_slug[slug].launch_mode in ("handoff", "embed"), slug
 
+    # Regression guard: Sample Tracking is frameable and is expected to open
+    # inside the MMOS workspace, not through the new-tab handoff panel.
+    assert by_slug["samples"].launch_mode == "embed"
+
     for slug in ("erpnext", "twenty"):
         assert by_slug[slug].launch_mode == "external", slug
 
