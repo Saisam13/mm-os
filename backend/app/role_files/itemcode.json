@@ -2,34 +2,40 @@
   "format": "mmos-roles/1",
   "service": "itemcode",
   "permissions": {
-    "items.view": "Browse, search and export the item master, its history, vacancies and ERP status",
-    "items.create": "Create new item codes (resolve, ingest, commit) and add item aliases",
-    "items.edit": "Edit existing items, spec values and labels; rename; revert an item to an earlier version",
-    "taxonomy.manage": "Add heads, sub-heads and groups; move, merge or delete groups; map and classify ERP items",
-    "erp.push": "Push items, specs and vendors to ERPNext",
-    "erp.sync": "Run the ERPNext sync and the reconcile",
-    "settings.manage": "Change Item Code Studio settings, including LLM provider and keys"
+    "view": "Search, view and decode item codes",
+    "item.create": "Create an item in an existing group",
+    "item.edit": "Edit an item",
+    "item.deactivate": "Deactivate an item (also disabled in ERPNext once approved)",
+    "item.delete": "Delete an item or a spec value",
+    "group.request": "Request a new, renamed or edited group, or new spec values, for approval",
+    "group.edit": "Create, rename or edit a group and add spec values directly",
+    "taxonomy.edit": "Create, rename or delete heads and sub-heads",
+    "push.request": "Send selected items, with tax template and HSN, for approval to push to ERPNext",
+    "approve": "Approve or reject requests, singly or in bulk; approval pushes to ERPNext",
+    "backup": "Run a manual backup",
+    "erp.health": "Run the ERPNext health check (read-only anomaly report)",
+    "admin": "Admin dashboard, system toggles, settings and the dataset switch"
   },
   "roles": [
     {
       "key": "associate",
       "name": "Associate",
-      "description": "Looks up item codes and raises new ones. Cannot change existing items or the taxonomy.",
+      "description": "Finds and creates item codes, edits and deactivates items, and sends group changes and ERPNext pushes for approval.",
       "default": true,
-      "permissions": ["items.view", "items.create"],
+      "permissions": ["view", "item.create", "item.edit", "item.deactivate", "group.request", "push.request"],
       "replaces": ["viewer"]
     },
     {
       "key": "manager",
       "name": "Manager",
-      "description": "Everything an associate can do, plus edit items, restructure the taxonomy and push or sync with ERPNext.",
-      "permissions": ["items.view", "items.create", "items.edit", "taxonomy.manage", "erp.push", "erp.sync"]
+      "description": "Everything an associate can do, plus delete items, change groups, heads and sub-heads directly, approve and push to ERPNext, back up and run the ERPNext health check.",
+      "permissions": ["view", "item.create", "item.edit", "item.deactivate", "item.delete", "group.request", "group.edit", "taxonomy.edit", "push.request", "approve", "backup", "erp.health"]
     },
     {
       "key": "admin",
-      "name": "Administrator",
-      "description": "Everything a manager can do, plus Item Code Studio settings and LLM keys.",
-      "permissions": ["items.view", "items.create", "items.edit", "taxonomy.manage", "erp.push", "erp.sync", "settings.manage"]
+      "name": "Admin",
+      "description": "Everything a manager can do, plus the admin dashboard, system toggles, settings and the dataset switch.",
+      "permissions": ["view", "item.create", "item.edit", "item.deactivate", "item.delete", "group.request", "group.edit", "taxonomy.edit", "push.request", "approve", "backup", "erp.health", "admin"]
     }
   ],
   "remove_unlisted": false,

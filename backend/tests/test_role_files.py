@@ -74,8 +74,8 @@ def test_apply_moves_viewers_and_gives_everyone_a_role(
     assert db.scalar(select(models.Revocation).where(models.Revocation.subject == old_viewer.subject))
 
     after = {r["key"]: r for r in body["service_after"]["roles"]}
-    assert "settings.manage" in after["admin"]["permissions"]
-    assert "settings.manage" not in after["manager"]["permissions"]
+    assert "admin" in after["admin"]["permissions"]
+    assert "admin" not in after["manager"]["permissions"]
     assert after["associate"]["is_default"] is True
 
 
@@ -136,8 +136,8 @@ def test_edit_and_delete_role(client, db, make_user, sign_in, make_service, make
     sign_in(make_user(is_platform_admin=True))
     client.post("/api/admin/services/itemcode/roles/import?dry_run=false", json={**committed("itemcode"), "assign": None})
 
-    r = client.patch("/api/admin/services/itemcode/roles/manager", json={"permissions": ["items.view"]})
-    assert r.status_code == 200 and r.json()["permissions"] == ["items.view"]
+    r = client.patch("/api/admin/services/itemcode/roles/manager", json={"permissions": ["view"]})
+    assert r.status_code == 200 and r.json()["permissions"] == ["view"]
     r = client.patch("/api/admin/services/itemcode/roles/manager", json={"permissions": ["made.up"]})
     assert r.status_code == 422
 
@@ -147,7 +147,7 @@ def test_edit_and_delete_role(client, db, make_user, sign_in, make_service, make
     make_grant(holder, service, manager)
     assert client.delete("/api/admin/services/itemcode/roles/manager").status_code == 409
 
-    added = client.post("/api/admin/services/itemcode/roles", json={"key": "auditor", "name": "Auditor", "permissions": ["items.view"]})
+    added = client.post("/api/admin/services/itemcode/roles", json={"key": "auditor", "name": "Auditor", "permissions": ["view"]})
     assert added.status_code == 201
     assert client.delete("/api/admin/services/itemcode/roles/auditor").status_code == 200
 
@@ -161,4 +161,4 @@ def test_service_token_carries_permissions(client, db, make_user, sign_in, make_
     assert r.status_code == 200, r.text
     claims = jwt.get_unverified_claims(r.json()["access_token"])
     assert claims["roles"] == ["admin"]
-    assert "settings.manage" in claims["permissions"]
+    assert "admin" in claims["permissions"]

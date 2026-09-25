@@ -18,19 +18,20 @@ service, and MM OS's admin had no way to see or change what a role allowed.
 
 **Decision.** A service declares a permission catalog, each role lists permissions from it,
 and the service token carries the holder's list as the `permissions` claim. The service
-enforces permissions, not role names. Roles, permissions and (optionally) who-gets-what are
+can enforce permissions instead of role names. Roles, permissions and (optionally) who-gets-what are
 declared in a **role file** (`backend/app/role_files/<slug>.json`, format in
 `app/roles_io.py`), imported from Admin → Roles with a dry run first.
 
 **Consequences.**
-- Changing what a role can do is an MM OS edit, not a service deploy, as long as the
-  permission already exists in the service's code. A *new* permission still needs the service
-  to check it, which is why new permissions arrive only by role file, never a free-text box.
-- A service must fall back to its own role→permission map when the claim is missing **or
-  empty**. Otherwise updating MM OS before importing the role file locks everyone out.
-- Item Code Studio stores the role and permissions on its own session at sign-in, so a role
-  change takes effect the next time the person opens it from MM OS, not instantly. The
-  revocation written on a role change only stops new launches from old tokens.
+- A service may enforce the `permissions` claim directly, or keep its own role→permission
+  table and use the claim as a mirror. Item Code Studio v2 does the latter (`core/rbac.py`):
+  it reads only the role name, so its role file must list exactly v2's permission names, and
+  ticking a box in MM OS changes nothing there until v2 reads the claim. The file is then the
+  single place a reader sees what each role can do.
+- A service that does read the claim must fall back to its own map when the claim is missing
+  **or empty**, or updating MM OS before importing the role file locks everyone out.
+- v2 refuses sign-in for any role other than associate / manager / admin, so importing the
+  role file (which moves `viewer` to `associate`) must happen before or with the v2 deploy.
 - `replaces` in a role file is the only safe way to retire a role people hold: it moves
   their grants in the same transaction. Deleting a held role is refused.
 
