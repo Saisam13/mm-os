@@ -294,6 +294,29 @@ details.role p { margin: 0 0 10px; font-size: 12.5px; color: var(--text-2); }
 .confirm-box p { font-size: 13.5px; color: var(--text-2); line-height: 1.55; margin-bottom: 18px; }
 .confirm-box .row-actions { justify-content: flex-end; }
 
+.grant-dialog { width: min(480px, 100%); max-height: min(680px, calc(100dvh - 32px)); padding: 0; overflow: hidden; }
+.grant-dialog__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px var(--pad) 12px; border-bottom: 1px solid var(--border-soft); }
+.grant-dialog__header h2 { margin: 0; }
+.grant-dialog__form { display: flex; flex-direction: column; max-height: calc(min(680px, 100dvh - 32px) - 59px); }
+.grant-dialog__form > .form-err, .grant-dialog__form > .field { margin-left: var(--pad); margin-right: var(--pad); }
+.grant-dialog__form > .form-err { margin-top: var(--pad); }
+.grant-dialog__form > .field:first-of-type { margin-top: var(--pad); }
+.grant-dialog__service-field { min-height: 0; display: flex; flex-direction: column; flex: 1; }
+.grant-dialog__services { min-height: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.grant-service-option { display: grid !important; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; margin: 0 !important; padding: 11px 12px; color: var(--text) !important; font-size: 13.5px !important; letter-spacing: 0 !important; text-transform: none !important; cursor: pointer; border-bottom: 1px solid var(--border-soft); }
+.grant-service-option:last-child { border-bottom: 0; }
+.grant-service-option:hover { background: var(--surface-2); }
+.grant-service-option input { width: 16px; margin: 0; }
+.grant-service-option .chip { white-space: nowrap; }
+.grant-dialog__actions { flex: 0 0 auto; padding: 12px var(--pad) 18px; border-top: 1px solid var(--border-soft); background: var(--surface); }
+
+@media (max-width: 560px) {
+  .confirm-scrim { padding: 0; align-items: flex-end; }
+  .grant-dialog { width: 100%; max-height: 92dvh; border-radius: var(--r-lg) var(--r-lg) 0 0; border-bottom: 0; }
+  .grant-dialog__form { max-height: calc(92dvh - 59px); }
+  .grant-dialog__actions > button { flex: 1; }
+}
+
 /* empty state */
 .empty { padding: 46px var(--pad); text-align: center; color: var(--text-3); }
 .empty .t { font-size: 14px; color: var(--text-2); margin-bottom: 4px; }

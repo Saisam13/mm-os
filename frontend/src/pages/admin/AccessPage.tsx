@@ -261,23 +261,32 @@ function AddGrantDialog({
   onDone: () => void
 }) {
   const [userId, setUserId] = useState('')
-  const [selection, setSelection] = useState<Record<string, string[]>>({})
-  const [reason, setReason] = useState('')
+  const [selection, setSelection] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const defaultServices = services
+    .filter((service) => service.is_active)
+    .map((service) => ({ service, role: service.roles.find((role) => role.is_default) }))
+    .filter((item): item is { service: AdminService; role: AdminService['roles'][number] } => Boolean(item.role))
 
-  function toggleRole(slug: string, role: string) {
-    setSelection((x) => ({ ...x, [slug]: x[slug]?.includes(role) ? x[slug].filter((r) => r !== role) : [...(x[slug] || []), role] }))
+  function toggleService(slug: string) {
+    setSelection((current) => current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug])
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    const selected = Object.entries(selection).filter(([, roles]) => roles.length)
-    if (!userId || !selected.length || !reason.trim()) return
+    if (!userId || !selection.length) return
     setBusy(true)
     setErr(null)
     try {
-      await mmosApi.admin.batchGrants({ user_id: userId, services: selected.map(([service_slug, roles]) => ({ service_slug, roles })), reason: reason.trim() })
+      await mmosApi.admin.batchGrants({
+        user_id: userId,
+        services: selection.map((serviceSlug) => {
+          const item = defaultServices.find(({ service }) => service.slug === serviceSlug)!
+          return { service_slug: serviceSlug, roles: [item.role.key] }
+        }),
+        reason: 'Default service access',
+      })
       onDone()
     } catch {
       setErr('Could not create the grant.')
@@ -288,9 +297,12 @@ function AddGrantDialog({
 
   return (
     <div className="confirm-scrim" onClick={onCancel}>
-      <div className="confirm-box" onClick={(e) => e.stopPropagation()} style={{ width: 440 }}>
-        <h2>Add service grants</h2>
-        <form onSubmit={submit}>
+      <div className="confirm-box grant-dialog" role="dialog" aria-modal="true" aria-labelledby="add-grant-title" onClick={(e) => e.stopPropagation()}>
+        <div className="grant-dialog__header">
+          <h2 id="add-grant-title">Add grants</h2>
+          <button type="button" className="x" aria-label="Close" onClick={onCancel}>×</button>
+        </div>
+        <form className="grant-dialog__form" onSubmit={submit}>
           {err ? <div className="form-err">{err}</div> : null}
           <div className="field">
             <label htmlFor="ag-person">Person</label>
@@ -301,14 +313,22 @@ function AddGrantDialog({
               ))}
             </select>
           </div>
-          <div className="field"><label>Services and roles</label>{services.filter((s) => s.is_active).map((s) => <fieldset key={s.slug} style={{ marginBottom: 10 }}><legend>{s.name}</legend>{s.roles.map((r) => <label className="grant-row" key={r.key}><input type="checkbox" checked={selection[s.slug]?.includes(r.key) ?? false} onChange={() => toggleRole(s.slug, r.key)} /><span className="g"><span className="nm">{r.name}</span><span className="mt">{r.description}</span></span></label>)}</fieldset>)}</div>
-          <div className="field">
-            <label htmlFor="ag-reason">Reason</label>
-            <input id="ag-reason" value={reason} onChange={(e) => setReason(e.target.value)} required />
+          <div className="field grant-dialog__service-field">
+            <label>Services</label>
+            <div className="grant-dialog__services">
+              {defaultServices.map(({ service, role }) => (
+                <label className="grant-service-option" key={service.slug}>
+                  <input type="checkbox" checked={selection.includes(service.slug)} onChange={() => toggleService(service.slug)} />
+                  <span>{service.name}</span>
+                  <span className="chip">{role.name}</span>
+                </label>
+              ))}
+              {defaultServices.length === 0 ? <div className="muted">No services have a default role.</div> : null}
+            </div>
           </div>
-          <div className="row-actions">
+          <div className="row-actions grant-dialog__actions">
             <button type="button" className="btn-q" onClick={onCancel} disabled={busy}>Cancel</button>
-            <button type="submit" className="btn-act" disabled={busy}>{busy ? 'Granting…' : 'Grant'}</button>
+            <button type="submit" className="btn-act" disabled={busy || !userId || selection.length === 0}>{busy ? 'Granting…' : `Grant ${selection.length || ''}`.trim()}</button>
           </div>
         </form>
       </div>
