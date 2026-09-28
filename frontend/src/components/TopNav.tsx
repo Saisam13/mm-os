@@ -42,12 +42,7 @@ export function TopNav() {
   if (!me) return null
 
   const desk = me.services.find((s) => s.slug === 'desk')
-  const isAdmin = me.user.is_platform_admin || Boolean(me.user.capabilities?.length)
-  const caps = new Set(me.user.capabilities || [])
-  const can = (...names: string[]) => me.user.is_platform_admin || names.some((n) => caps.has(n))
-  const adminHome = can('grants.view', 'grants.add', 'grants.change', 'grants.revoke') ? '/admin/access'
-    : can('people.view', 'people.create', 'people.edit') ? '/admin/people'
-      : can('agents.manage') ? '/admin/agents' : can('departments.assign') ? '/admin/departments' : '/admin/roles'
+  const isAdmin = me.user.is_platform_admin
   const sel = (path: string) => (location.pathname.startsWith(path) ? ' sel' : '')
 
   const paletteItems: PaletteItem[] = [
@@ -56,9 +51,11 @@ export function TopNav() {
     { id: 'nav-profile', label: 'Profile', kind: 'page', run: () => navigate('/profile') },
     ...(isAdmin
       ? [
-          ...(can('grants.view', 'grants.add', 'grants.change', 'grants.revoke') ? [{ id: 'nav-access', label: 'Service grants', kind: 'page', run: () => navigate('/admin/access') }] : []),
-          ...(can('people.view', 'people.create', 'people.edit') ? [{ id: 'nav-people', label: 'People', kind: 'page', run: () => navigate('/admin/people') }] : []),
-          ...(me.user.is_platform_admin ? [{ id: 'nav-svcadmin', label: 'Services (admin)', kind: 'page', run: () => navigate('/admin/services') }, { id: 'nav-audit', label: 'Audit', kind: 'page', run: () => navigate('/admin/audit') }, { id: 'nav-ai', label: 'AI services', kind: 'page', run: () => navigate('/ai') }] : []),
+          { id: 'nav-access', label: 'Access', kind: 'page', run: () => navigate('/admin/access') },
+          { id: 'nav-people', label: 'People', kind: 'page', run: () => navigate('/admin/people') },
+          { id: 'nav-svcadmin', label: 'Services (admin)', kind: 'page', run: () => navigate('/admin/services') },
+          { id: 'nav-audit', label: 'Audit', kind: 'page', run: () => navigate('/admin/audit') },
+          { id: 'nav-ai', label: 'AI services', kind: 'page', run: () => navigate('/ai') },
         ]
       : []),
   ]
@@ -90,11 +87,11 @@ export function TopNav() {
           </button>
         ) : null}
         {isAdmin ? (
-          <Link to={adminHome} className={`topnav-i${sel('/admin')}`}>
-            Administration
+          <Link to="/admin/access" className={`topnav-i${sel('/admin')}`}>
+            Access
           </Link>
         ) : null}
-        {me.user.is_platform_admin ? (
+        {isAdmin ? (
           <Link to="/ai" className={`topnav-i${sel('/ai')}`}>
             AI services
           </Link>

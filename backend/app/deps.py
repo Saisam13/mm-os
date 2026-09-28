@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from .config import settings
 from .db import get_db
-from .models import AuditLog, Employee, Service, Session, User, UserCapability
+from .models import AuditLog, Employee, Service, Session, User
 from .security import hash_token
 
 
@@ -69,43 +69,6 @@ def require_admin(user: User = Depends(current_user)) -> User:
             403, detail={"error": "admin_required", "message": "This page is for IT administrators."}
         )
     return user
-
-
-CAPABILITIES = {
-    "people.view", "people.create", "people.edit", "departments.assign",
-    "grants.view", "grants.add", "grants.change", "grants.revoke",
-    "agents.manage", "admin_roles.manage", "hr_onboarding.create",
-}
-
-
-def has_capability(db: OrmSession, user: User, capability: str) -> bool:
-    """Platform admins own every administration capability; delegated users hold only
-    explicit rows. No request-body or frontend flag participates in this decision."""
-    if user.is_platform_admin:
-        return True
-    return db.scalar(
-        select(UserCapability.id).where(
-            UserCapability.user_id == user.id,
-            UserCapability.capability == capability,
-        ).limit(1)
-    ) is not None
-
-
-def require_capability(capability: str):
-    if capability not in CAPABILITIES:
-        raise ValueError(f"Unknown capability: {capability}")
-
-    def dependency(
-        user: User = Depends(current_user), db: OrmSession = Depends(get_db)
-    ) -> User:
-        if not has_capability(db, user, capability):
-            raise HTTPException(
-                403,
-                detail={"error": "capability_required", "message": f"Requires {capability}."},
-            )
-        return user
-
-    return dependency
 
 
 def require_service_key(

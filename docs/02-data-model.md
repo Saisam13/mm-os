@@ -1,11 +1,5 @@
 # 02 · Data model
 
-> The original DDL below documents revision `0001`. Revision `0002` adds controlled
-> departments, onboarding references, delegated capabilities, separate agent identities,
-> grant origin, and multiple roles per person/service. See
-> [14-identity-administration.md](14-identity-administration.md) and the Alembic migration for
-> the implemented additive model.
-
 Postgres 16. One instance on the VPS, one database per service. MM OS uses database `mmos`.
 All ids are `uuid` with `gen_random_uuid()` (`pgcrypto`). All timestamps are `timestamptz`.
 

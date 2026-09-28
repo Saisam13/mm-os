@@ -1,9 +1,5 @@
 # 10 · Runbook
 
-Identity administration, protected-admin recovery, deployment, and rollback procedures are in
-[14-identity-administration.md](14-identity-administration.md). Keep two active IT Admins and
-verify the protected-admin guard before offboarding either one.
-
 Written for the person on call at 2am who did not build this. Every entry is commands and
 expected output, not prose. `PY` below is always `backend/.venv/Scripts/python.exe` on this
 Windows build machine, or `backend/.venv/bin/python` on the deployed Linux host — **never bare

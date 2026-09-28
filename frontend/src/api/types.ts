@@ -42,7 +42,6 @@ export interface MeUser {
   band: string
   approval_level: string | null
   is_platform_admin: boolean
-  capabilities?: string[]
 }
 
 export type LaunchMode = 'handoff' | 'embed' | 'external'
@@ -84,9 +83,6 @@ export interface AdminEmployee {
   employee_code: string
   full_name: string
   work_email: string | null
-  department_id?: string | null
-  department?: AdminDepartment | null
-  onboarding_ref?: string | null
   hr_department: string
   division: string
   job_title: string
@@ -138,14 +134,9 @@ export interface AdminGrant {
   role: { key: string; name: string }
   granted_by: { id: string; name: string } | null
   reason: string | null
-  origin?: string
   expires_at: string | null
   created_at: string
 }
-
-export interface AdminDepartment { id: string; key: string; name: string; is_active: boolean }
-export interface AdminAgent { id: string; name: string; slug: string; kind: 'agent' | 'automation' | 'integration'; service_id: string | null; is_active: boolean; created_at?: string }
-export interface CapabilityAssignment { id: string; user_id: string; capability: string; scope_department_id: string | null; granted_by: string | null }
 
 // ── admin: LLM control plane ─────────────────────────────────────────────
 export interface AdminLlmUsagePoint {
