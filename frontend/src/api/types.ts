@@ -266,7 +266,7 @@ export interface AdminGrant {
   created_at: string
 }
 
-export interface AdminDepartment { id: string; key: string; name: string; is_active: boolean }
+export interface AdminDepartment { id: string; key: string; name: string; erp_department: string | null; is_active: boolean }
 export interface AdminAgent { id: string; name: string; slug: string; kind: 'agent' | 'automation' | 'integration'; service_id: string | null; is_active: boolean; created_at?: string }
 export interface CapabilityAssignment { id: string; user_id: string; capability: string; scope_department_id: string | null; granted_by: string | null }
 

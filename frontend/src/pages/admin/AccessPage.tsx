@@ -22,6 +22,10 @@ export function AccessPage() {
   const [showAddGrant, setShowAddGrant] = useState(false)
   const [showBulk, setShowBulk] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [personFilter, setPersonFilter] = useState('')
+  const [departmentFilter, setDepartmentFilter] = useState('')
+  const [bandFilter, setBandFilter] = useState('')
+  const [serviceFilter, setServiceFilter] = useState('')
 
   function reload() {
     Promise.all([
@@ -43,6 +47,17 @@ export function AccessPage() {
     }
     return map
   }, [grants])
+
+  const departments = useMemo(() => [...new Set((employees ?? []).map((employee) => employee.hr_department))].sort(), [employees])
+  const bands = useMemo(() => [...new Set((employees ?? []).map((employee) => employee.band).filter(Boolean))].sort(), [employees])
+  const filteredEmployees = useMemo(() => (employees ?? []).filter((employee) => {
+    const term = personFilter.trim().toLowerCase()
+    if (term && !`${employee.full_name} ${employee.employee_code}`.toLowerCase().includes(term)) return false
+    if (departmentFilter && employee.hr_department !== departmentFilter) return false
+    if (bandFilter && employee.band !== bandFilter) return false
+    if (serviceFilter && !(employee.user_id && (grantsByUser.get(employee.user_id) ?? []).some((grant) => grant.service.slug === serviceFilter))) return false
+    return true
+  }), [employees, personFilter, departmentFilter, bandFilter, serviceFilter, grantsByUser])
 
   if (loadError) return <EmptyState title={loadError} />
   if (!employees || !services || !grants) return null
@@ -71,7 +86,14 @@ export function AccessPage() {
 
       <div className="card">
         <div className="card-h">
-          <div><div className="eyebrow">{employees.length} employees · click a row for the full picture</div><h2>Grants</h2></div>
+          <div><div className="eyebrow">{filteredEmployees.length} of {employees.length} employees</div><h2>Grants</h2></div>
+        </div>
+        <div className="matrix-filters">
+          <div className="field"><label htmlFor="grant-person-filter">Person</label><input id="grant-person-filter" value={personFilter} onChange={(e) => setPersonFilter(e.target.value)} placeholder="Name or employee code" /></div>
+          <div className="field"><label htmlFor="grant-dept-filter">Department</label><select id="grant-dept-filter" value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)}><option value="">All departments</option>{departments.map((department) => <option key={department}>{department}</option>)}</select></div>
+          <div className="field"><label htmlFor="grant-band-filter">Band</label><select id="grant-band-filter" value={bandFilter} onChange={(e) => setBandFilter(e.target.value)}><option value="">All bands</option>{bands.map((band) => <option key={band}>{band}</option>)}</select></div>
+          <div className="field"><label htmlFor="grant-service-filter">Service access</label><select id="grant-service-filter" value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)}><option value="">All services</option>{services.filter((service) => service.is_active).map((service) => <option key={service.slug} value={service.slug}>{service.name}</option>)}</select></div>
+          {(personFilter || departmentFilter || bandFilter || serviceFilter) ? <button className="btn-q" onClick={() => { setPersonFilter(''); setDepartmentFilter(''); setBandFilter(''); setServiceFilter('') }}>Clear</button> : null}
         </div>
         <div className="card-b flush">
           <div className="matrix-wrap">
@@ -86,7 +108,7 @@ export function AccessPage() {
                 </tr>
               </thead>
               <tbody>
-                {employees.map((e) => {
+                {filteredEmployees.map((e) => {
                   const g = e.user_id ? (grantsByUser.get(e.user_id) ?? []) : []
                   const expiring = g.find((x) => x.expires_at)
                   return (
@@ -299,28 +321,27 @@ function AddGrantDialog({
     <div className="confirm-scrim" onClick={onCancel}>
       <div className="confirm-box grant-dialog" role="dialog" aria-modal="true" aria-labelledby="add-grant-title" onClick={(e) => e.stopPropagation()}>
         <div className="grant-dialog__header">
-          <h2 id="add-grant-title">Add grants</h2>
+          <h2 id="add-grant-title">Give service access</h2>
           <button type="button" className="x" aria-label="Close" onClick={onCancel}>×</button>
         </div>
         <form className="grant-dialog__form" onSubmit={submit}>
           {err ? <div className="form-err">{err}</div> : null}
           <div className="field">
-            <label htmlFor="ag-person">Person</label>
+            <label htmlFor="ag-person">Employee</label>
             <select id="ag-person" value={userId} onChange={(e) => setUserId(e.target.value)} required>
-              <option value="">Choose…</option>
+              <option value="">Choose an employee</option>
               {employees.filter((e) => e.user_id).map((e) => (
                 <option key={e.id} value={e.user_id!}>{e.full_name} · {e.employee_code}</option>
               ))}
             </select>
           </div>
           <div className="field grant-dialog__service-field">
-            <label>Services</label>
+            <label>Choose services</label>
             <div className="grant-dialog__services">
-              {defaultServices.map(({ service, role }) => (
+              {defaultServices.map(({ service }) => (
                 <label className="grant-service-option" key={service.slug}>
                   <input type="checkbox" checked={selection.includes(service.slug)} onChange={() => toggleService(service.slug)} />
                   <span>{service.name}</span>
-                  <span className="chip">{role.name}</span>
                 </label>
               ))}
               {defaultServices.length === 0 ? <div className="muted">No services have a default role.</div> : null}
@@ -328,7 +349,7 @@ function AddGrantDialog({
           </div>
           <div className="row-actions grant-dialog__actions">
             <button type="button" className="btn-q" onClick={onCancel} disabled={busy}>Cancel</button>
-            <button type="submit" className="btn-act" disabled={busy || !userId || selection.length === 0}>{busy ? 'Granting…' : `Grant ${selection.length || ''}`.trim()}</button>
+            <button type="submit" className="btn-act" disabled={busy || !userId || selection.length === 0}>{busy ? 'Saving…' : 'Give access'}</button>
           </div>
         </form>
       </div>

@@ -354,10 +354,10 @@ export const mock: MmosApi = {
     },
     async listDepartments() {
       await delay(100)
-      return [...new Set(EMPLOYEES.map((e) => e.hr_department))].sort().map((name, i) => ({ id: `dept-${i}`, key: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, is_active: true }))
+      return [...new Set(EMPLOYEES.map((e) => e.hr_department))].sort().map((name, i) => ({ id: `dept-${i}`, key: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, erp_department: name, is_active: true }))
     },
-    async createDepartment(payload) { await delay(100); return { id: `dept-${Date.now()}`, ...payload, is_active: true } },
-    async updateDepartment(id, patch) { await delay(100); return { id, key: String(patch.key || ''), name: String(patch.name || ''), is_active: patch.is_active ?? true } },
+    async createDepartment(payload) { await delay(100); return { id: `dept-${Date.now()}`, ...payload, erp_department: payload.erp_department || payload.name, is_active: true } },
+    async updateDepartment(id, patch) { await delay(100); return { id, key: String(patch.key || ''), name: String(patch.name || ''), erp_department: patch.erp_department ?? null, is_active: patch.is_active ?? true } },
     async createPerson(payload) {
       await delay(250)
       const data: any = (payload as any).employee || payload

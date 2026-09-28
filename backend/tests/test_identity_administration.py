@@ -38,6 +38,20 @@ def test_it_admin_creates_person_in_controlled_department(client, db, make_user,
     assert db.scalar(select(AuditLog).where(AuditLog.action == "person.create")).actor_user_id == actor.id
 
 
+def test_department_tracks_erpnext_mapping(client, make_user, sign_in):
+    admin_session(make_user, sign_in)
+    created = client.post("/api/admin/departments", json={
+        "name": "Projects", "key": "projects", "erp_department": "Projects - MM",
+    })
+    assert created.status_code == 201
+    department_id = created.json()["id"]
+    assert created.json()["erp_department"] == "Projects - MM"
+
+    updated = client.patch(f"/api/admin/departments/{department_id}", json={"erp_department": "Project Operations - MM"})
+    assert updated.status_code == 200
+    assert updated.json()["erp_department"] == "Project Operations - MM"
+
+
 def test_hr_onboarding_creator_is_department_scoped(client, db, make_user, sign_in):
     hr = make_user(); allowed = department(db); denied = department(db, "Finance", "finance")
     db.add(UserCapability(user_id=hr.id, capability="hr_onboarding.create", scope_department_id=allowed.id)); db.commit(); sign_in(hr)

@@ -75,7 +75,10 @@ def _employee_out(e: Employee) -> dict:
 
 
 def _department_out(d: Department) -> dict:
-    return {"id": str(d.id), "key": d.key, "name": d.name, "is_active": d.is_active}
+    return {
+        "id": str(d.id), "key": d.key, "name": d.name,
+        "erp_department": d.erp_department, "is_active": d.is_active,
+    }
 
 
 @router.get("/departments")
@@ -102,7 +105,8 @@ def create_department(
         raise HTTPException(422, {"error": "missing_fields"})
     if db.scalar(select(Department).where(or_(Department.name == name, Department.key == key))):
         raise HTTPException(409, {"error": "department_exists"})
-    row = Department(name=name, key=key)
+    erp_department = str(body.get("erp_department") or name).strip()
+    row = Department(name=name, key=key, erp_department=erp_department)
     db.add(row); db.flush()
     audit(db, action="department.create", actor_user_id=actor.id, target_type="department",
           target_id=row.id, ip=client_ip(request))
@@ -122,6 +126,8 @@ def update_department(
             employee.hr_department = row.name
     if "is_active" in body:
         row.is_active = bool(body["is_active"])
+    if "erp_department" in body:
+        row.erp_department = str(body["erp_department"] or "").strip() or None
     audit(db, action="department.update", actor_user_id=actor.id, target_type="department",
           target_id=row.id, ip=client_ip(request), fields=list(body))
     db.commit()

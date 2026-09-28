@@ -26,7 +26,7 @@ export interface MmosApi {
   admin: {
     listEmployees(f: EmployeeFilter): Promise<AdminEmployee[]>
     listDepartments(): Promise<AdminDepartment[]>
-    createDepartment(payload: { name: string; key: string }): Promise<AdminDepartment>
+    createDepartment(payload: { name: string; key: string; erp_department?: string | null }): Promise<AdminDepartment>
     updateDepartment(id: string, patch: Partial<AdminDepartment>): Promise<AdminDepartment>
     createPerson(payload: Record<string, unknown>): Promise<{ employee: AdminEmployee; grants_created: number }>
     updateEmployee(id: string, patch: Partial<AdminEmployee>): Promise<AdminEmployee>

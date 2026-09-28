@@ -114,6 +114,7 @@ class Department(Base):
     id: Mapped[uuid.UUID] = _pk()
     key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    erp_department: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = _now()
 

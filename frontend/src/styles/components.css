@@ -343,6 +343,25 @@ details.role p { margin: 0 0 10px; font-size: 12.5px; color: var(--text-2); }
 .matrix td.cell { text-align: center; cursor: pointer; }
 .matrix td.cell:hover { background: var(--surface-2); }
 .matrix-empty { color: var(--text-3); }
+.matrix-filters { display: grid; grid-template-columns: minmax(190px, 1.4fr) repeat(3, minmax(150px, 1fr)) auto; gap: 10px; align-items: end; padding: 14px var(--pad); border-bottom: 1px solid var(--border-soft); background: var(--surface-2); }
+.matrix-filters .field { margin: 0; min-width: 0; }
+.matrix-filters .btn-q { margin-bottom: 1px; }
+.department-add-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+.department-add-form .field { margin: 0; }
+.erp-map-edit { display: flex; gap: 8px; min-width: 280px; }
+.erp-map-edit input { min-width: 180px; flex: 1; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); }
+.erp-map-edit input:focus { outline: none; border-color: var(--petrol); box-shadow: 0 0 0 3px var(--petrol-100); }
+
+@media (max-width: 900px) {
+  .matrix-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .matrix-filters .btn-q { width: max-content; }
+  .department-add-form { grid-template-columns: 1fr 1fr; }
+  .department-add-form .btn-act { width: max-content; }
+}
+
+@media (max-width: 520px) {
+  .matrix-filters, .department-add-form { grid-template-columns: 1fr; }
+}
 
 /* ══════════════════════ WORKSPACE (Dashboard) ═══════════════════════
    The workspace design language: a services sidebar, a calm main area,
@@ -390,9 +409,9 @@ details.role p { margin: 0 0 10px; font-size: 12.5px; color: var(--text-2); }
 .ws-svc:hover { background: var(--surface-2); }
 .ws-svc.active { background: var(--petrol-100); border-color: var(--petrol-100); }
 .ws-svc .g { min-width: 0; flex: 1; }
-.ws-svc .nm { font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-svc .nm { display: block; font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-svc.active .nm { color: var(--petrol); }
-.ws-svc .rl { font-family: var(--fc); font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; margin-top: 1px; }
+.ws-svc .rl { display: block; font-family: var(--fc); font-size: 10.5px; color: var(--text-3); text-transform: capitalize; letter-spacing: .02em; margin-top: 3px; }
 .ws-svc.active .rl { color: var(--petrol); }
 
 .ws-main { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; background: var(--ground); }

@@ -109,7 +109,7 @@ export function Dashboard() {
                 <ServiceMark slug={s.slug} name={s.name} kind={kindFromLaunchMode(s.launch_mode)} size={34} />
                 <span className="g">
                   <span className="nm">{s.name}</span>
-                  <span className="rl">{s.role}</span>
+                  <span className="rl">{s.role.replace(/_/g, ' ')}</span>
                 </span>
               </button>
             ))
