@@ -89,6 +89,10 @@ export const client: MmosApi = {
         }
       })
     },
+    listDepartments: () => req<{ departments: any[] }>('/api/admin/departments').then((r) => r.departments),
+    createDepartment: (payload) => req('/api/admin/departments', { method: 'POST', body: JSON.stringify(payload) }),
+    updateDepartment: (id, patch) => req(`/api/admin/departments/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    createPerson: (payload) => req('/api/admin/people', { method: 'POST', body: JSON.stringify(payload) }),
     updateEmployee: (id, patch) =>
       req(`/api/admin/employees/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     setUserActive: (userId, isActive) =>
@@ -111,11 +115,12 @@ export const client: MmosApi = {
     listGrants: (f) => req<{ grants: any[] }>(`/api/admin/grants${qs(f)}`).then((r) => r.grants),
     createGrant: (payload) => req('/api/admin/grants', { method: 'POST', body: JSON.stringify(payload) }),
     deleteGrant: (id) => req(`/api/admin/grants/${id}`, { method: 'DELETE' }),
+    batchGrants: (payload) => req('/api/admin/grants/batch', { method: 'POST', body: JSON.stringify(payload) }),
     bulkGrant: (payload) =>
-      req<{ created: number; skipped: number }>('/api/admin/grants/bulk', {
+      req<{ created?: number; skipped?: number; preview?: boolean; would_create?: number }>('/api/admin/grants/bulk', {
         method: 'POST',
         body: JSON.stringify(payload),
-      }).then((r) => ({ count: r.created })),
+      }).then((r) => ({ count: r.preview ? (r.would_create || 0) : (r.created || 0), preview: r.preview })),
 
     listLlm: () => req<{ registrations: any[] }>('/api/admin/llm').then((r) => r.registrations),
     toggleLlm: (slug, enabled, reason) =>
@@ -123,5 +128,11 @@ export const client: MmosApi = {
 
     listAudit: (f) =>
       req<{ entries: any[]; next_cursor: string | null }>(`/api/admin/audit${qs(f)}`).then((r) => r.entries),
+    listAgents: () => req<{ agents: any[] }>('/api/admin/agents').then((r) => r.agents),
+    createAgent: (payload) => req('/api/admin/agents', { method: 'POST', body: JSON.stringify(payload) }),
+    listCapabilities: () => req('/api/admin/capabilities'),
+    grantCapability: (userId, capability, scope_department_id) =>
+      req(`/api/admin/users/${userId}/capabilities`, { method: 'POST', body: JSON.stringify({ capability, scope_department_id }) }),
+    revokeCapability: (id) => req(`/api/admin/capabilities/${id}`, { method: 'DELETE' }),
   },
 }

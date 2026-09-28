@@ -194,3 +194,26 @@ spreadsheet must never be able to silently orphan a grant.
 - Every mutating admin route writes `audit_log` in the same transaction as the change.
 - Deleting a grant or deactivating a user writes a `revocations` row in that same transaction — access removal is never a two-step that can half-fail.
 - Pagination is `?limit=&cursor=`, default 50, max 200.
+## Identity administration additions (v2)
+
+All authorization below is evaluated from the verified MM OS session. Actor identifiers in
+request bodies are ignored/not accepted.
+
+| Endpoint | Capability | Purpose |
+|---|---|---|
+| `GET /api/admin/departments` | `people.view` | Active/inactive controlled department list |
+| `POST /api/admin/people` | `people.create` or scoped `hr_onboarding.create` | Transactional employee, login and multi-grant creation |
+| `GET /api/admin/grants` | `grants.view` | Human service grants, including origin and audit attribution |
+| `POST /api/admin/grants` | `grants.add` | Add one role grant (compatible endpoint) |
+| `POST /api/admin/grants/batch` | `grants.add`; replace additionally needs change/revoke | Add or replace roles across services atomically |
+| `DELETE /api/admin/grants/{id}` | `grants.revoke` | Revoke one role and publish service revocation |
+| `POST /api/admin/grants/bulk` | `grants.add` | Preview or commit selection-based grants |
+| `GET /api/admin/agents` / `POST /api/admin/agents` | `agents.manage` | Separate machine identity inventory |
+| `GET /api/admin/capabilities` | `admin_roles.manage` | Capability catalog and assignments |
+| `POST /api/admin/users/{id}/capabilities` | `admin_roles.manage` | Delegate within the actor's authority |
+| `DELETE /api/admin/capabilities/{id}` | `admin_roles.manage` | Revoke a delegated capability |
+
+Person creation accepts `{employee, auth_type, grants}`. Each grant is
+`{service_slug, roles: string[], reason?, origin?}`. Batch grant changes accept
+`{user_id, services: [{service_slug, roles, replace?}], reason?}`. Validation failures are
+4xx responses and commit no part of the operation.

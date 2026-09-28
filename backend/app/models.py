@@ -36,6 +36,10 @@ class Employee(Base):
     employee_code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
     work_email: Mapped[str | None] = mapped_column(Text, unique=True)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="RESTRICT")
+    )
+    onboarding_ref: Mapped[str | None] = mapped_column(String(128), unique=True)
     hr_department: Mapped[str] = mapped_column(Text, nullable=False)
     division: Mapped[str] = mapped_column(Text, nullable=False)
     job_title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -54,6 +58,7 @@ class Employee(Base):
 
     user: Mapped["User"] = relationship(back_populates="employee", uselist=False)
     manager: Mapped["Employee"] = relationship(remote_side=[id])
+    department: Mapped["Department | None"] = relationship()
 
     __table_args__ = (
         CheckConstraint("status IN ('active','suspended','exited')", name="employee_status"),
@@ -98,6 +103,63 @@ class User(Base):
     @property
     def subject(self) -> str:
         return f"user:{self.id}"
+
+
+class Department(Base):
+    """Controlled organization list. ``employees.hr_department`` remains as a compatibility
+    snapshot for existing integrations while new writes must reference this table."""
+
+    __tablename__ = "departments"
+
+    id: Mapped[uuid.UUID] = _pk()
+    key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = _now()
+
+
+class UserCapability(Base):
+    """Explicit delegated MM OS administration authority."""
+
+    __tablename__ = "user_capabilities"
+
+    id: Mapped[uuid.UUID] = _pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    capability: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope_department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="CASCADE")
+    )
+    granted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "capability", "scope_department_id", name="uq_user_capability_scope"),
+    )
+
+
+class AgentIdentity(Base):
+    """Machine identities are deliberately not users and cannot receive human grants."""
+
+    __tablename__ = "agent_identities"
+
+    id: Mapped[uuid.UUID] = _pk()
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), default="agent", nullable=False)
+    service_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("services.id", ondelete="SET NULL")
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    credential_hash: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('agent','automation','integration')", name="agent_kind"),
+    )
 
 
 # ── service registry ──────────────────────────────────────────────────────
@@ -153,7 +215,7 @@ class ServiceRole(Base):
 
 
 class Grant(Base):
-    """One row = one person may open one service in one role. The whole permission model."""
+    """One row = one role held by a person in one service."""
 
     __tablename__ = "grants"
 
@@ -171,6 +233,7 @@ class Grant(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     reason: Mapped[str | None] = mapped_column(Text)
+    origin: Mapped[str] = mapped_column(String(24), default="manual", nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _now()
 
@@ -179,7 +242,7 @@ class Grant(Base):
     role: Mapped[ServiceRole] = relationship()
 
     __table_args__ = (
-        UniqueConstraint("user_id", "service_id", name="uq_grant_user_service"),
+        UniqueConstraint("user_id", "service_id", "service_role_id", name="uq_grant_user_service_role"),
         Index("ix_grants_service", "service_id"),
     )
 

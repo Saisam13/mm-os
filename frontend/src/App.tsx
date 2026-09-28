@@ -12,6 +12,9 @@ import { AccessPage } from './pages/admin/AccessPage'
 import { ServicesAdminPage } from './pages/admin/ServicesAdminPage'
 import { AuditPage } from './pages/admin/AuditPage'
 import { LlmPage } from './pages/admin/LlmPage'
+import { AgentsPage } from './pages/admin/AgentsPage'
+import { DepartmentsPage } from './pages/admin/DepartmentsPage'
+import { RolesPage } from './pages/admin/RolesPage'
 
 export function App() {
   return (
@@ -28,9 +31,12 @@ export function App() {
             <Route element={<AdminGuard />}>
               <Route path="/ai" element={<LlmPage />} />
               <Route path="/admin" element={<AdminTabs />}>
-                <Route index element={<Navigate to="access" replace />} />
+                <Route index element={<Navigate to="people" replace />} />
                 <Route path="access" element={<AccessPage />} />
                 <Route path="people" element={<PeoplePage />} />
+                <Route path="agents" element={<AgentsPage />} />
+                <Route path="departments" element={<DepartmentsPage />} />
+                <Route path="roles" element={<RolesPage />} />
                 <Route path="services" element={<ServicesAdminPage />} />
                 <Route path="audit" element={<AuditPage />} />
               </Route>
