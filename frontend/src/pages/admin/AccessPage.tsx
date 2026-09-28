@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { mmosApi } from '../../api'
 import type { AdminEmployee, AdminGrant, AdminService, AuditEntry } from '../../api/types'
 import { Panel } from '../../components/Panel'
@@ -282,32 +283,50 @@ function AddGrantDialog({
   onCancel: () => void
   onDone: () => void
 }) {
+  const grantableServices = services.filter((service) => service.is_active && service.roles.length > 0)
+  const firstService = grantableServices[0]
   const [userId, setUserId] = useState('')
-  const [selection, setSelection] = useState<string[]>([])
+  const [grantRows, setGrantRows] = useState(() => firstService ? [{
+    id: 0,
+    serviceSlug: firstService.slug,
+    roleKey: (firstService.roles.find((role) => role.is_default) ?? firstService.roles[0]).key,
+  }] : [])
+  const nextRowId = useRef(1)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const defaultServices = services
-    .filter((service) => service.is_active)
-    .map((service) => ({ service, role: service.roles.find((role) => role.is_default) }))
-    .filter((item): item is { service: AdminService; role: AdminService['roles'][number] } => Boolean(item.role))
+  const enrolledPeople = employees
+    .filter((employee) => employee.user_id)
+    .sort((a, b) => a.full_name.localeCompare(b.full_name))
+  const selectedPerson = enrolledPeople.find((employee) => employee.user_id === userId)
 
-  function toggleService(slug: string) {
-    setSelection((current) => current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug])
+  function updateService(rowId: number, serviceSlug: string) {
+    const service = grantableServices.find((item) => item.slug === serviceSlug)!
+    const role = service.roles.find((item) => item.is_default) ?? service.roles[0]
+    setGrantRows((current) => current.map((row) => row.id === rowId ? { ...row, serviceSlug, roleKey: role.key } : row))
+  }
+
+  function updateRole(rowId: number, roleKey: string) {
+    setGrantRows((current) => current.map((row) => row.id === rowId ? { ...row, roleKey } : row))
+  }
+
+  function addService() {
+    const used = new Set(grantRows.map((row) => row.serviceSlug))
+    const service = grantableServices.find((item) => !used.has(item.slug))
+    if (!service) return
+    const role = service.roles.find((item) => item.is_default) ?? service.roles[0]
+    setGrantRows((current) => [...current, { id: nextRowId.current++, serviceSlug: service.slug, roleKey: role.key }])
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!userId || !selection.length) return
+    if (!userId || !grantRows.length || grantRows.some((row) => !row.serviceSlug || !row.roleKey)) return
     setBusy(true)
     setErr(null)
     try {
       await mmosApi.admin.batchGrants({
         user_id: userId,
-        services: selection.map((serviceSlug) => {
-          const item = defaultServices.find(({ service }) => service.slug === serviceSlug)!
-          return { service_slug: serviceSlug, roles: [item.role.key] }
-        }),
-        reason: 'Default service access',
+        services: grantRows.map((row) => ({ service_slug: row.serviceSlug, roles: [row.roleKey] })),
+        reason: 'Access assigned by administrator',
       })
       onDone()
     } catch {
@@ -329,27 +348,33 @@ function AddGrantDialog({
           <div className="field">
             <label htmlFor="ag-person">Employee</label>
             <select id="ag-person" value={userId} onChange={(e) => setUserId(e.target.value)} required>
-              <option value="">Choose an employee</option>
-              {employees.filter((e) => e.user_id).map((e) => (
-                <option key={e.id} value={e.user_id!}>{e.full_name} · {e.employee_code}</option>
+              <option value="">Select a person</option>
+              {enrolledPeople.map((employee) => (
+                <option key={employee.id} value={employee.user_id!}>{employee.full_name} — {employee.work_email || employee.employee_code}</option>
               ))}
             </select>
+            {selectedPerson ? <div className="grant-person-summary"><strong>{selectedPerson.employee_code}</strong><span>{selectedPerson.work_email || 'No enrolled email'}</span></div> : <div className="field-help">Not listed? <Link to="/admin/people">Add the person first</Link>.</div>}
           </div>
           <div className="field grant-dialog__service-field">
-            <label>Choose services</label>
-            <div className="grant-dialog__services">
-              {defaultServices.map(({ service }) => (
-                <label className="grant-service-option" key={service.slug}>
-                  <input type="checkbox" checked={selection.includes(service.slug)} onChange={() => toggleService(service.slug)} />
-                  <span>{service.name}</span>
-                </label>
-              ))}
-              {defaultServices.length === 0 ? <div className="muted">No services have a default role.</div> : null}
+            <label>Service access</label>
+            <div className="grant-builder">
+              {grantRows.map((row, index) => {
+                const service = grantableServices.find((item) => item.slug === row.serviceSlug)
+                const usedByOthers = new Set(grantRows.filter((item) => item.id !== row.id).map((item) => item.serviceSlug))
+                return <div className="grant-builder-row" key={row.id}>
+                  <span className="grant-builder-number">{index + 1}</span>
+                  <div className="field"><label htmlFor={`grant-service-${row.id}`}>Service</label><select id={`grant-service-${row.id}`} value={row.serviceSlug} onChange={(e) => updateService(row.id, e.target.value)}>{grantableServices.filter((item) => item.slug === row.serviceSlug || !usedByOthers.has(item.slug)).map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select></div>
+                  <div className="field"><label htmlFor={`grant-role-${row.id}`}>Role</label><select id={`grant-role-${row.id}`} value={row.roleKey} onChange={(e) => updateRole(row.id, e.target.value)}>{service?.roles.map((role) => <option key={role.key} value={role.key}>{role.name}</option>)}</select></div>
+                  <button type="button" className="x" aria-label={`Remove ${service?.name || 'service'}`} onClick={() => setGrantRows((current) => current.filter((item) => item.id !== row.id))}>×</button>
+                </div>
+              })}
+              {grantableServices.length === 0 ? <div className="muted">No services with roles are available.</div> : null}
             </div>
+            <button type="button" className="btn-q grant-dialog__add" onClick={addService} disabled={grantRows.length >= grantableServices.length}>+ Add another service</button>
           </div>
           <div className="row-actions grant-dialog__actions">
             <button type="button" className="btn-q" onClick={onCancel} disabled={busy}>Cancel</button>
-            <button type="submit" className="btn-act" disabled={busy || !userId || selection.length === 0}>{busy ? 'Saving…' : 'Give access'}</button>
+            <button type="submit" className="btn-act" disabled={busy || !userId || grantRows.length === 0}>{busy ? 'Saving…' : `Give ${grantRows.length} access grant${grantRows.length === 1 ? '' : 's'}`}</button>
           </div>
         </form>
       </div>
