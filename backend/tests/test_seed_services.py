@@ -90,3 +90,15 @@ def test_seed_services_is_idempotent_and_preserves_hand_edits(db):
     # And role rows weren't duplicated either.
     # (itemcode seeds public, associate, manager, admin from app/role_files/itemcode.json)
     assert [r.key for r in itemcode_after.roles] == ["public", "associate", "manager", "admin"]
+
+
+def test_seed_services_spokedi_has_the_four_roles(db):
+    """Owner decision 28 Sep 2026: production enters, the Head approves (which posts to
+    ERPNext), IT sets up, everyone else views. Spoke Daily Input enforces these by name."""
+    seed_services(db)
+    db.commit()
+
+    svc = next(s for s in db.scalars(select(models.Service)) if s.slug == "spokedi")
+    roles = sorted(svc.roles, key=lambda r: r.sort_order)
+    assert [r.key for r in roles] == ["viewer", "production", "head", "it"]
+    assert [r.key for r in roles if r.is_default] == ["viewer"]

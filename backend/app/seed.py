@@ -354,10 +354,10 @@ SERVICES: list[dict] = [
     dict(
         slug="spokedi", name="Spoke Daily Input", category="production",
         base_url=SPOKEDI_URL, launch_mode="embed",
-        roles=[
-            ("viewer", "Viewer", "View daily spoke production entries and reports."),
-            ("admin", "Administrator", "Everything a viewer can do, plus create and edit spoke entries."),
-        ],
+        # Viewer, Production, Head and IT admin (owner decision 28 Sep 2026) come from
+        # app/role_files/spokedi.json, applied right after the row is created. The app
+        # enforces them by role name in its own core/auth.py.
+        roles=[],
     ),
     dict(
         slug="samples", name="Sample Tracking", category="production",

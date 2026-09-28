@@ -1,0 +1,46 @@
+{
+  "format": "mmos-roles/1",
+  "service": "spokedi",
+  "permissions": {
+    "view": "See sheets and download blank worksheets",
+    "enter": "Enter sheets - a photo of the paper sheet or typed in - check them and submit them for approval",
+    "approve": "Approve or send back submitted sheets; approving posts the stock entry to ERPNext",
+    "setup": "Worksheet editor, Settings and Requests"
+  },
+  "roles": [
+    {
+      "key": "viewer",
+      "name": "Viewer",
+      "description": "Sees sheets and downloads blank worksheets. The lowest level, given to anyone who has not been set up for Spoke Daily Input.",
+      "default": true,
+      "permissions": ["view"]
+    },
+    {
+      "key": "production",
+      "name": "Production",
+      "description": "Enters sheets - a photo of the paper sheet or typed in - checks them and submits them to the Head for approval.",
+      "permissions": ["view", "enter"]
+    },
+    {
+      "key": "head",
+      "name": "Head",
+      "description": "Everything production can do, plus approve or send back submitted sheets. Approving is what posts the stock entry to ERPNext.",
+      "permissions": ["view", "enter", "approve"]
+    },
+    {
+      "key": "it",
+      "name": "IT admin",
+      "description": "Everything, plus the worksheet editor, Settings and Requests.",
+      "permissions": ["view", "enter", "approve", "setup"],
+      "replaces": ["admin"]
+    }
+  ],
+  "remove_unlisted": false,
+  "assign": {
+    "mode": "missing",
+    "rules": [
+      {"platform_admin": true, "role": "it"}
+    ],
+    "default": "viewer"
+  }
+}
