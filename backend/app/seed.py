@@ -40,7 +40,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from .db import SessionLocal
-from .models import AuditLog, Employee, Grant, Service, ServiceRole, User
+from .models import AuditLog, Department, Employee, Grant, Service, ServiceRole, User
 from .models import Session as ShellSession
 from .security import hash_pin
 from . import roles_io
@@ -204,12 +204,27 @@ def compute_diff(db: OrmSession, rows: list[EmployeeRow]) -> ImportDiff:
 
 def apply_diff(db: OrmSession, diff: ImportDiff) -> None:
     """Create new employees/users and update changed fields. Never deletes anything."""
+    departments = {d.name.casefold(): d for d in db.scalars(select(Department)).all()}
+
+    def controlled_department(name: str) -> Department:
+        key = name.strip().casefold()
+        department = departments.get(key)
+        if department is None:
+            slug = "-".join("".join(c.lower() if c.isalnum() else " " for c in name).split())
+            department = Department(key=slug, name=name.strip())
+            db.add(department)
+            db.flush()
+            departments[key] = department
+        return department
+
     for r in diff.new:
+        department = controlled_department(r.hr_department)
         emp = Employee(
             employee_code=r.employee_code,
             full_name=r.full_name,
             work_email=r.work_email,
             hr_department=r.hr_department,
+            department_id=department.id,
             division=r.division,
             job_title=r.job_title,
             band=r.band,
@@ -239,6 +254,8 @@ def apply_diff(db: OrmSession, diff: ImportDiff) -> None:
         emp = db.scalar(select(Employee).where(Employee.employee_code == r.employee_code))
         for f in field_diff:
             setattr(emp, f, getattr(r, f))
+        if "hr_department" in field_diff:
+            emp.department_id = controlled_department(r.hr_department).id
 
 
 def resolve_managers(db: OrmSession) -> tuple[list[str], list[str]]:
@@ -444,11 +461,17 @@ def seed_platform_admin(db: OrmSession) -> str:
 
     emp = db.scalar(select(Employee).where(Employee.work_email == PLATFORM_ADMIN_EMAIL))
     if emp is None:
+        department = db.scalar(select(Department).where(Department.name == "Information Technology"))
+        if department is None:
+            department = Department(key="information-technology", name="Information Technology")
+            db.add(department)
+            db.flush()
         emp = Employee(
             employee_code="MM-ITADMIN",
             full_name="IT Administrator",
             work_email=PLATFORM_ADMIN_EMAIL,
             hr_department="Information Technology",
+            department_id=department.id,
             division="Corporate",
             job_title="Platform Administrator",
             band="L3",

@@ -352,6 +352,23 @@ export const mock: MmosApi = {
         return true
       })
     },
+    async listDepartments() {
+      await delay(100)
+      return [...new Set(EMPLOYEES.map((e) => e.hr_department))].sort().map((name, i) => ({ id: `dept-${i}`, key: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, is_active: true }))
+    },
+    async createDepartment(payload) { await delay(100); return { id: `dept-${Date.now()}`, ...payload, is_active: true } },
+    async updateDepartment(id, patch) { await delay(100); return { id, key: String(patch.key || ''), name: String(patch.name || ''), is_active: patch.is_active ?? true } },
+    async createPerson(payload) {
+      await delay(250)
+      const data: any = (payload as any).employee || payload
+      const depts = [...new Set(EMPLOYEES.map((e) => e.hr_department))].sort().map((name, i) => ({ id: `dept-${i}`, name }))
+      const dept = depts.find((d) => d.id === data.department_id)
+      const userId = `u-${Date.now()}`
+      const emp: AdminEmployee = { ...data, id: `e-${Date.now()}`, hr_department: dept?.name || 'Project', work_email: data.work_email || null, approval_level: data.approval_level || null, is_approver: false, notes: data.notes || null, status: 'active', user_id: userId, auth_type: (payload as any).auth_type || 'google', is_active: true, is_platform_admin: false, last_login_at: null }
+      EMPLOYEES.push(emp)
+      for (const spec of ((payload as any).grants || [])) for (const role of spec.roles) GRANTS_BY_USER[userId] = { ...(GRANTS_BY_USER[userId] || {}), [spec.service_slug]: role }
+      return { employee: emp, grants_created: ((payload as any).grants || []).reduce((n: number, s: any) => n + s.roles.length, 0) }
+    },
     async updateEmployee(id, patch) {
       await delay(200)
       const e = EMPLOYEES.find((x) => x.id === id)
@@ -497,12 +514,21 @@ export const mock: MmosApi = {
         }
       }
     },
+    async batchGrants(payload) {
+      await delay(250)
+      let created = 0
+      for (const spec of payload.services) {
+        for (const role of spec.roles) { GRANTS_BY_USER[payload.user_id] = { ...(GRANTS_BY_USER[payload.user_id] || {}), [spec.service_slug]: role }; created++ }
+      }
+      return { created, revoked: 0, grants: grantsFor(payload.user_id) }
+    },
     async bulkGrant(payload) {
       await delay(300)
       const targets = EMPLOYEES.filter((e) =>
         (!payload.band || payload.band.includes(e.band)) &&
         (!payload.department || payload.department.includes(e.hr_department)),
       )
+      if (payload.preview) return { count: targets.length, preview: true }
       for (const e of targets) {
         if (!e.user_id) continue
         GRANTS_BY_USER[e.user_id] = { ...(GRANTS_BY_USER[e.user_id] || {}), [payload.slug]: payload.role }
@@ -553,5 +579,10 @@ export const mock: MmosApi = {
         warnings: [],
       }
     },
+    async listAgents() { await delay(100); return [] },
+    async createAgent(payload) { await delay(150); return { id: `agent-${Date.now()}`, ...payload, service_id: payload.service_id || null, is_active: true } },
+    async listCapabilities() { await delay(100); return { available: ['people.view', 'people.create', 'people.edit', 'departments.assign', 'grants.view', 'grants.add', 'grants.change', 'grants.revoke', 'agents.manage', 'admin_roles.manage', 'hr_onboarding.create'], assignments: [] } },
+    async grantCapability() { await delay(100) },
+    async revokeCapability() { await delay(100) },
   },
 }

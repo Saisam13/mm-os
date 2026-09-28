@@ -1,21 +1,18 @@
 import React, { useEffect, useState } from 'react'
 import { mmosApi } from '../../api'
-import type { AdminEmployee } from '../../api/types'
+import type { AdminDepartment, AdminEmployee, AdminService } from '../../api/types'
 import { Panel } from '../../components/Panel'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { EmptyState } from '../../components/EmptyState'
 import { formatDate } from '../../lib/format'
 import { rowActivation } from '../../lib/a11y'
 import { PeopleUploadDialog } from './PeopleUpload'
-
-// Canonical departments (backend app/departments.py).
-const DEPARTMENTS = [
-  'BD & Operations', 'CXO Office', 'EHS', 'Finance', 'HR', 'IT', 'Logistics', 'N-Hub', 'P-Hub', 'P-Spoke',
-  'Projects', 'Purchase', 'QA/QC', 'R&D', 'StratOps', 'Stores', 'Unassigned',
-]
+import { useAuth } from '../../auth/AuthContext'
 const STATUSES = ['active', 'suspended', 'exited']
 
 export function PeoplePage() {
+  const { me } = useAuth()
+  const canGrant = Boolean(me?.user.is_platform_admin || me?.user.capabilities?.includes('grants.add'))
   const [rows, setRows] = useState<AdminEmployee[] | null>(null)
   const [q, setQ] = useState('')
   const [dept, setDept] = useState('')
@@ -24,6 +21,14 @@ export function PeoplePage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const [departments, setDepartments] = useState<AdminDepartment[]>([])
+  const [services, setServices] = useState<AdminService[]>([])
+  const [adding, setAdding] = useState(false)
+
+  function reload() {
+    mmosApi.admin.listEmployees({ q: q || undefined, dept: dept || undefined, status: status || undefined })
+      .then(setRows).catch(() => setLoadError('Could not load employees.'))
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -33,13 +38,11 @@ export function PeoplePage() {
       .catch(() => { if (!cancelled) setLoadError('Could not load employees.') })
     return () => { cancelled = true }
   }, [q, dept, status, reloadKey])
+  useEffect(() => { Promise.all([mmosApi.admin.listDepartments(), mmosApi.admin.listServices()]).then(([d, s]) => { setDepartments(d); setServices(s) }).catch(() => setLoadError('Could not load administration data.')) }, [])
 
   return (
     <>
-      <div className="head">
-        <h1>People</h1>
-        <button className="btn-act" onClick={() => setUploading(true)}>Bulk upload</button>
-      </div>
+      <div className="head"><div><h1>People</h1><div className="muted">Employees and human access only. Machine identities are managed under Agents.</div></div><div className="row-actions"><button className="btn-q" onClick={() => setUploading(true)}>Bulk upload</button><button className="btn-act" onClick={() => setAdding(true)}>Add person</button></div></div>
 
       <div className="filters">
         <div className="field">
@@ -50,7 +53,7 @@ export function PeoplePage() {
           <label htmlFor="p-dept">Department</label>
           <select id="p-dept" value={dept} onChange={(e) => setDept(e.target.value)}>
             <option value="">All</option>
-            {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+            {departments.filter((d) => d.is_active).map((d) => <option key={d.id} value={d.name}>{d.name}</option>)}
           </select>
         </div>
         <div className="field">
@@ -105,6 +108,7 @@ export function PeoplePage() {
       {selected ? (
         <PersonDrawer
           employee={selected}
+          departments={departments}
           onClose={() => setSelected(null)}
           onSaved={(updated) => {
             setRows((r) => r?.map((x) => (x.id === updated.id ? updated : x)) ?? r)
@@ -112,16 +116,19 @@ export function PeoplePage() {
           }}
         />
       ) : null}
+      {adding ? <AddPersonFlow departments={departments} services={canGrant ? services : []} onCancel={() => setAdding(false)} onCreated={() => { setAdding(false); reload() }} /> : null}
     </>
   )
 }
 
 function PersonDrawer({
   employee,
+  departments,
   onClose,
   onSaved,
 }: {
   employee: AdminEmployee
+  departments: AdminDepartment[]
   onClose: () => void
   onSaved: (e: AdminEmployee) => void
 }) {
@@ -139,7 +146,7 @@ function PersonDrawer({
     setSaving(true)
     try {
       const updated = await mmosApi.admin.updateEmployee(employee.id, {
-        hr_department: form.hr_department,
+        department_id: form.department_id,
         division: form.division,
         job_title: form.job_title,
         band: form.band,
@@ -199,7 +206,9 @@ function PersonDrawer({
     <Panel open onClose={onClose} eyebrow={employee.employee_code} title={employee.full_name}>
       <div className="field">
         <label htmlFor="e-dept">Department</label>
-        <input id="e-dept" value={form.hr_department} onChange={(e) => setForm({ ...form, hr_department: e.target.value })} />
+        <select id="e-dept" value={form.department_id ?? ''} onChange={(e) => { const d = departments.find((x) => x.id === e.target.value); setForm({ ...form, department_id: e.target.value, hr_department: d?.name ?? form.hr_department }) }}>
+          {departments.filter((d) => d.is_active).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
       </div>
       <div className="field">
         <label htmlFor="e-div">Division</label>
@@ -239,7 +248,9 @@ function PersonDrawer({
       ) : null}
 
       <div className="eyebrow" style={{ margin: '22px 0 8px' }}>Access</div>
-      {employee.is_active === false ? (
+      {employee.is_platform_admin ? (
+        <span className="chip pet">Protected IT Admin · no normal deactivate action</span>
+      ) : employee.is_active === false ? (
         <span className="chip">Already deactivated</span>
       ) : (
         <button className="btn-q btn-danger" onClick={openDeactivateConfirm}>Deactivate person</button>
@@ -257,4 +268,35 @@ function PersonDrawer({
       ) : null}
     </Panel>
   )
+}
+
+function AddPersonFlow({ departments, services, onCancel, onCreated }: { departments: AdminDepartment[]; services: AdminService[]; onCancel: () => void; onCreated: () => void }) {
+  const [step, setStep] = useState(1)
+  const [form, setForm] = useState({ employee_code: '', full_name: '', work_email: '', onboarding_ref: '', department_id: departments.find((d) => d.is_active)?.id ?? '', division: '', job_title: '', band: '' })
+  const [selected, setSelected] = useState<Record<string, string[]>>({})
+  const [search, setSearch] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const serviceList = services.filter((s) => s.is_active && s.name.toLowerCase().includes(search.toLowerCase()))
+  function toggleService(slug: string) { setSelected((x) => x[slug] ? Object.fromEntries(Object.entries(x).filter(([k]) => k !== slug)) : { ...x, [slug]: [] }) }
+  function toggleRole(slug: string, role: string) { setSelected((x) => ({ ...x, [slug]: x[slug]?.includes(role) ? x[slug].filter((r) => r !== role) : [...(x[slug] || []), role] })) }
+  async function create() {
+    setBusy(true); setError(null)
+    try {
+      await mmosApi.admin.createPerson({ employee: { ...form, work_email: form.work_email || null, onboarding_ref: form.onboarding_ref || null }, auth_type: form.work_email ? 'google' : 'local_pin', grants: Object.entries(selected).map(([service_slug, roles]) => ({ service_slug, roles, reason: 'Assigned during person creation' })) })
+      onCreated()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not create person.') } finally { setBusy(false) }
+  }
+  const validInfo = form.employee_code && form.full_name && form.division && form.job_title && form.band
+  const validRoles = Object.values(selected).every((r) => r.length > 0)
+  return <div className="confirm-scrim" onClick={onCancel}><div className="confirm-box" onClick={(e) => e.stopPropagation()} style={{ width: 680, maxWidth: '94vw' }}>
+    <div className="eyebrow">Step {step} of 5</div><h2>Add person</h2>
+    {error ? <div className="form-err" role="alert">{error}</div> : null}
+    {step === 1 ? <><div className="field"><label>Employee code</label><input value={form.employee_code} onChange={(e) => setForm({ ...form, employee_code: e.target.value })} /></div><div className="field"><label>Full name</label><input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div><div className="field"><label>Work email</label><input type="email" value={form.work_email} onChange={(e) => setForm({ ...form, work_email: e.target.value })} /></div><div className="field"><label>HR onboarding reference (optional)</label><input value={form.onboarding_ref} onChange={(e) => setForm({ ...form, onboarding_ref: e.target.value })} /></div><div className="field"><label>Division</label><input value={form.division} onChange={(e) => setForm({ ...form, division: e.target.value })} /></div><div className="field"><label>Job title</label><input value={form.job_title} onChange={(e) => setForm({ ...form, job_title: e.target.value })} /></div><div className="field"><label>Band</label><input value={form.band} onChange={(e) => setForm({ ...form, band: e.target.value })} /></div></> : null}
+    {step === 2 ? <div className="field"><label htmlFor="new-dept">Existing department</label><select id="new-dept" value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>{departments.filter((d) => d.is_active).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select><div className="muted">Department names are controlled to prevent duplicate spellings.</div></div> : null}
+    {step === 3 ? <><div className="field"><label htmlFor="service-search">Search services</label><input id="service-search" value={search} onChange={(e) => setSearch(e.target.value)} /></div>{serviceList.map((s) => <label className="grant-row" key={s.slug}><input type="checkbox" checked={Boolean(selected[s.slug])} onChange={() => toggleService(s.slug)} /><span className="g"><span className="nm">{s.name}</span><span className="mt">{s.tagline}</span></span></label>)}</> : null}
+    {step === 4 ? Object.keys(selected).length === 0 ? <EmptyState title="No services selected" hint="Continue to create the person without service access." /> : services.filter((s) => selected[s.slug]).map((s) => <div key={s.slug} style={{ marginBottom: 18 }}><strong>{s.name}</strong>{s.roles.map((r) => <label className="grant-row" key={r.key}><input type="checkbox" checked={selected[s.slug]?.includes(r.key)} onChange={() => toggleRole(s.slug, r.key)} /><span className="g"><span className="nm">{r.name}</span><span className="mt">{r.description}</span></span></label>)}</div>) : null}
+    {step === 5 ? <div><p><strong>{form.full_name}</strong> · {form.employee_code}</p><p>{departments.find((d) => d.id === form.department_id)?.name} · {form.job_title}</p><p>{Object.entries(selected).map(([slug, roles]) => `${services.find((s) => s.slug === slug)?.name}: ${roles.join(', ')}`).join(' · ') || 'No service grants'}</p><p className="muted">Creation and all grants are committed together. Any validation error leaves no partial person or grants.</p></div> : null}
+    <div className="row-actions"><button className="btn-q" onClick={step === 1 ? onCancel : () => setStep(step - 1)}>{step === 1 ? 'Cancel' : 'Back'}</button>{step < 5 ? <button className="btn-act" onClick={() => setStep(step + 1)} disabled={(step === 1 && !validInfo) || (step === 2 && !form.department_id) || (step === 4 && !validRoles)}>Continue</button> : <button className="btn-act" onClick={create} disabled={busy}>{busy ? 'Creating…' : 'Create person'}</button>}</div>
+  </div></div>
 }

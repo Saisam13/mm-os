@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..config import settings
 from ..db import get_db
-from ..deps import audit, client_ip, require_admin
+from ..deps import CAPABILITIES, audit, client_ip, current_user, has_capability, require_admin, require_capability
 from ..llm_control import (
     LlmFeature,
     LlmFeatureUsageDaily,
@@ -27,6 +27,8 @@ from ..llm_control import (
 )
 from ..models import (
     AuditLog,
+    AgentIdentity,
+    Department,
     Employee,
     Grant,
     LlmRegistration,
@@ -35,6 +37,7 @@ from ..models import (
     Service,
     ServiceRole,
     User,
+    UserCapability,
 )
 from ..roles_io import RoleFileError
 from ..roles_io import committed as committed_role_file
@@ -115,6 +118,25 @@ class GrantBulk(BaseModel):
     band: list[str] | None = None
     department: list[str] | None = None
     reason: str | None = None
+    preview: bool = False
+
+
+class GrantBatch(BaseModel):
+    user_id: uuid.UUID
+    services: list[dict]
+    reason: str | None = None
+
+
+class CapabilityChange(BaseModel):
+    capability: str
+    scope_department_id: uuid.UUID | None = None
+
+
+class AgentCreate(BaseModel):
+    name: str
+    slug: str
+    kind: str = "agent"
+    service_id: uuid.UUID | None = None
 
 
 class LlmToggle(BaseModel):
@@ -194,6 +216,7 @@ def _grant_out(db: OrmSession, g: Grant) -> dict:
             else None
         ),
         "reason": g.reason,
+        "origin": g.origin,
         "expires_at": g.expires_at.isoformat() if g.expires_at else None,
         "created_at": g.created_at.isoformat(),
     }
@@ -212,7 +235,11 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 # ── services ──────────────────────────────────────────────────────────────────
 @router.get("/services")
-def list_services(admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)):
+def list_services(admin: User = Depends(current_user), db: OrmSession = Depends(get_db)):
+    if not admin.is_platform_admin and not any(has_capability(db, admin, cap) for cap in (
+        "grants.view", "grants.add", "people.create", "hr_onboarding.create"
+    )):
+        raise HTTPException(403, detail={"error": "capability_required"})
     services = db.scalars(select(Service).order_by(Service.sort_order, Service.name)).all()
     return {"services": [_service_out(s) for s in services]}
 
@@ -583,7 +610,7 @@ def rotate_key(
 def list_grants(
     service: str | None = Query(None),
     user: uuid.UUID | None = Query(None),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_capability("grants.view")),
     db: OrmSession = Depends(get_db),
 ):
     q = select(Grant)
@@ -599,7 +626,7 @@ def list_grants(
 def create_grant(
     body: GrantCreate,
     request: Request,
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_capability("grants.add")),
     db: OrmSession = Depends(get_db),
 ):
     service = db.scalar(select(Service).where(Service.slug == body.slug))
@@ -611,7 +638,8 @@ def create_grant(
     if role is None:
         raise HTTPException(404, detail={"error": "role_not_found"})
     if db.scalar(
-        select(Grant).where(Grant.user_id == body.user_id, Grant.service_id == service.id)
+        select(Grant).where(Grant.user_id == body.user_id, Grant.service_id == service.id,
+                            Grant.service_role_id == role.id)
     ):
         raise HTTPException(409, detail={"error": "grant_exists"})
     grant = Grant(
@@ -643,7 +671,7 @@ def create_grant(
 def delete_grant(
     id: uuid.UUID,
     request: Request,
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_capability("grants.revoke")),
     db: OrmSession = Depends(get_db),
 ):
     grant = db.get(Grant, id)
@@ -665,7 +693,7 @@ def delete_grant(
     )
     audit(
         db,
-        action="grant.delete",
+        action="grant.revoke",
         actor_user_id=admin.id,
         target_type="grant",
         target_id=str(grant.id),
@@ -681,7 +709,7 @@ def delete_grant(
 def bulk_grants(
     body: GrantBulk,
     request: Request,
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_capability("grants.add")),
     db: OrmSession = Depends(get_db),
 ):
     service = db.scalar(select(Service).where(Service.slug == body.slug))
@@ -706,10 +734,15 @@ def bulk_grants(
             g.user_id
             for g in db.scalars(
                 select(Grant).where(
-                    Grant.service_id == service.id, Grant.user_id.in_([u.id for u in users])
+                    Grant.service_id == service.id, Grant.service_role_id == role.id,
+                    Grant.user_id.in_([u.id for u in users])
                 )
             ).all()
         }
+
+    if body.preview:
+        return {"preview": True, "valid": True, "would_create": len(users) - len(existing),
+                "would_skip": len(existing), "errors": []}
 
     created = 0
     for u in users:
@@ -740,6 +773,174 @@ def bulk_grants(
     )
     db.commit()
     return {"created": created, "skipped": len(users) - created}
+
+
+@router.post("/grants/batch")
+def batch_grants(
+    body: GrantBatch,
+    request: Request,
+    actor: User = Depends(current_user),
+    db: OrmSession = Depends(get_db),
+):
+    """Add or replace several services' roles for one human in one transaction."""
+    if not has_capability(db, actor, "grants.add"):
+        raise HTTPException(403, detail={"error": "capability_required"})
+    user = db.get(User, body.user_id)
+    if user is None:
+        raise HTTPException(404, detail={"error": "user_not_found"})
+
+    validated: list[tuple[Service, list[ServiceRole], bool]] = []
+    for item in body.services:
+        slug = item.get("service_slug") or item.get("slug")
+        service = db.scalar(select(Service).where(Service.slug == slug, Service.is_active.is_(True)))
+        keys = item.get("roles") or []
+        if service is None or not keys:
+            raise HTTPException(422, detail={"error": "invalid_service_role", "service": slug})
+        roles = list(db.scalars(select(ServiceRole).where(
+            ServiceRole.service_id == service.id, ServiceRole.key.in_(keys)
+        )))
+        if len({r.key for r in roles}) != len(set(keys)):
+            raise HTTPException(422, detail={"error": "invalid_service_role", "service": slug})
+        replace = bool(item.get("replace", False))
+        if replace and (not has_capability(db, actor, "grants.change") or
+                        not has_capability(db, actor, "grants.revoke")):
+            raise HTTPException(403, detail={"error": "capability_required"})
+        validated.append((service, roles, replace))
+
+    created = revoked = 0
+    now = datetime.now(timezone.utc)
+    for service, roles, replace in validated:
+        existing = list(db.scalars(select(Grant).where(
+            Grant.user_id == user.id, Grant.service_id == service.id
+        )))
+        wanted = {r.id for r in roles}
+        if replace:
+            for grant in existing:
+                if grant.service_role_id not in wanted:
+                    db.delete(grant)
+                    revoked += 1
+            if any(g.service_role_id not in wanted for g in existing):
+                db.add(Revocation(subject=user.subject, service_id=service.id,
+                                  reason="grant_roles_changed", revoked_by=actor.id,
+                                  revoked_at=now, purge_after=now + _REVOCATION_TTL))
+        have = {g.service_role_id for g in existing if not replace or g.service_role_id in wanted}
+        for role in roles:
+            if role.id in have:
+                continue
+            grant = Grant(user_id=user.id, service_id=service.id, service_role_id=role.id,
+                          granted_by=actor.id, reason=body.reason, origin="manual")
+            db.add(grant)
+            db.flush()
+            created += 1
+            audit(db, action="grant.create", actor_user_id=actor.id, target_type="grant",
+                  target_id=grant.id, service_id=service.id, role=role.key)
+        if replace:
+            audit(db, action="grant.roles_change", actor_user_id=actor.id, target_type="user",
+                  target_id=user.id, service_id=service.id, roles=sorted(r.key for r in roles))
+    db.commit()
+    return {"created": created, "revoked": revoked, "grants": [
+        _grant_out(db, g) for g in db.scalars(select(Grant).where(Grant.user_id == user.id)).all()
+    ]}
+
+
+# ── delegated administration ─────────────────────────────────────────────────
+@router.get("/capabilities")
+def list_capabilities(
+    actor: User = Depends(require_capability("admin_roles.manage")),
+    db: OrmSession = Depends(get_db),
+):
+    rows = db.scalars(select(UserCapability)).all()
+    return {"available": sorted(CAPABILITIES), "assignments": [{
+        "id": str(row.id), "user_id": str(row.user_id), "capability": row.capability,
+        "scope_department_id": str(row.scope_department_id) if row.scope_department_id else None,
+        "granted_by": str(row.granted_by) if row.granted_by else None,
+    } for row in rows]}
+
+
+@router.post("/users/{user_id}/capabilities", status_code=201)
+def grant_capability(
+    user_id: uuid.UUID,
+    body: CapabilityChange,
+    request: Request,
+    actor: User = Depends(require_capability("admin_roles.manage")),
+    db: OrmSession = Depends(get_db),
+):
+    if body.capability not in CAPABILITIES:
+        raise HTTPException(422, detail={"error": "unknown_capability"})
+    if not actor.is_platform_admin and not has_capability(db, actor, body.capability):
+        raise HTTPException(403, detail={"error": "delegation_escalation"})
+    if db.get(User, user_id) is None:
+        raise HTTPException(404, detail={"error": "user_not_found"})
+    if body.scope_department_id and db.get(Department, body.scope_department_id) is None:
+        raise HTTPException(422, detail={"error": "invalid_department"})
+    existing = db.scalar(select(UserCapability).where(
+        UserCapability.user_id == user_id,
+        UserCapability.capability == body.capability,
+        UserCapability.scope_department_id == body.scope_department_id,
+    ))
+    if existing:
+        return {"id": str(existing.id), "capability": existing.capability}
+    row = UserCapability(user_id=user_id, capability=body.capability,
+                         scope_department_id=body.scope_department_id, granted_by=actor.id)
+    db.add(row)
+    db.flush()
+    audit(db, action="admin.capability_grant", actor_user_id=actor.id, target_type="user",
+          target_id=user_id, ip=client_ip(request), capability=body.capability)
+    db.commit()
+    return {"id": str(row.id), "capability": row.capability}
+
+
+@router.delete("/capabilities/{assignment_id}")
+def revoke_capability(
+    assignment_id: uuid.UUID,
+    request: Request,
+    actor: User = Depends(require_capability("admin_roles.manage")),
+    db: OrmSession = Depends(get_db),
+):
+    row = db.get(UserCapability, assignment_id)
+    if row is None:
+        raise HTTPException(404, detail={"error": "capability_not_found"})
+    if not actor.is_platform_admin and not has_capability(db, actor, row.capability):
+        raise HTTPException(403, detail={"error": "delegation_escalation"})
+    audit(db, action="admin.capability_revoke", actor_user_id=actor.id, target_type="user",
+          target_id=row.user_id, ip=client_ip(request), capability=row.capability)
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+# ── machine identities (never returned by People APIs) ───────────────────────
+@router.get("/agents")
+def list_agents(
+    actor: User = Depends(require_capability("agents.manage")),
+    db: OrmSession = Depends(get_db),
+):
+    rows = db.scalars(select(AgentIdentity).order_by(AgentIdentity.name)).all()
+    return {"agents": [{"id": str(a.id), "name": a.name, "slug": a.slug,
+                        "kind": a.kind, "service_id": str(a.service_id) if a.service_id else None,
+                        "is_active": a.is_active, "created_at": a.created_at.isoformat()}
+                       for a in rows]}
+
+
+@router.post("/agents", status_code=201)
+def create_agent(
+    body: AgentCreate,
+    request: Request,
+    actor: User = Depends(require_capability("agents.manage")),
+    db: OrmSession = Depends(get_db),
+):
+    if body.kind not in {"agent", "automation", "integration"}:
+        raise HTTPException(422, detail={"error": "invalid_agent_kind"})
+    if db.scalar(select(AgentIdentity).where(AgentIdentity.slug == body.slug)):
+        raise HTTPException(409, detail={"error": "agent_exists"})
+    row = AgentIdentity(**body.model_dump())
+    db.add(row)
+    db.flush()
+    audit(db, action="agent.create", actor_user_id=actor.id, target_type="agent",
+          target_id=row.id, ip=client_ip(request), kind=row.kind)
+    db.commit()
+    return {"id": str(row.id), "name": row.name, "slug": row.slug, "kind": row.kind,
+            "service_id": str(row.service_id) if row.service_id else None, "is_active": row.is_active}
 
 
 # ── LLM control plane ──────────────────────────────────────────────────────────

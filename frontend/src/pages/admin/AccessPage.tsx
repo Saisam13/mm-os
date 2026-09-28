@@ -50,7 +50,7 @@ export function AccessPage() {
   return (
     <>
       <div className="head">
-        <h1>Access</h1>
+        <h1>Service grants</h1>
         <div className="row-actions">
           <button className="btn-q" onClick={() => setShowBulk(true)}>Bulk grant by band</button>
           <button className="btn-act" onClick={() => setShowAddGrant(true)}>Add grant</button>
@@ -95,11 +95,11 @@ export function AccessPage() {
                       <td className="tight">{e.hr_department}</td>
                       <td className="tight cond">{e.band}</td>
                       {services.map((s) => {
-                        const grant = g.find((x) => x.service.slug === s.slug)
+                        const serviceGrants = g.filter((x) => x.service.slug === s.slug)
                         return (
                           <td key={s.slug} className="cell">
-                            {grant ? (
-                              <span className={`chip${['admin', 'agent', 'manager'].includes(grant.role.key) ? ' pet' : ''}`}>{grant.role.key}</span>
+                            {serviceGrants.length ? (
+                              serviceGrants.map((grant) => <span key={grant.id} className={`chip${['admin', 'agent', 'manager'].includes(grant.role.key) ? ' pet' : ''}`}>{grant.role.key}</span>)
                             ) : (
                               <span className="matrix-empty">—</span>
                             )}
@@ -261,23 +261,23 @@ function AddGrantDialog({
   onDone: () => void
 }) {
   const [userId, setUserId] = useState('')
-  const [slug, setSlug] = useState(services[0]?.slug ?? '')
-  const [role, setRole] = useState(services[0]?.roles[0]?.key ?? '')
+  const [selection, setSelection] = useState<Record<string, string[]>>({})
   const [reason, setReason] = useState('')
-  const [expiresAt, setExpiresAt] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  const svc = services.find((s) => s.slug === slug)
-  const roleDesc = svc?.roles.find((r) => r.key === role)?.description
+  function toggleRole(slug: string, role: string) {
+    setSelection((x) => ({ ...x, [slug]: x[slug]?.includes(role) ? x[slug].filter((r) => r !== role) : [...(x[slug] || []), role] }))
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!userId || !slug || !role || !reason.trim()) return
+    const selected = Object.entries(selection).filter(([, roles]) => roles.length)
+    if (!userId || !selected.length || !reason.trim()) return
     setBusy(true)
     setErr(null)
     try {
-      await mmosApi.admin.createGrant({ user_id: userId, slug, role, reason: reason.trim(), expires_at: expiresAt || null })
+      await mmosApi.admin.batchGrants({ user_id: userId, services: selected.map(([service_slug, roles]) => ({ service_slug, roles })), reason: reason.trim() })
       onDone()
     } catch {
       setErr('Could not create the grant.')
@@ -289,7 +289,7 @@ function AddGrantDialog({
   return (
     <div className="confirm-scrim" onClick={onCancel}>
       <div className="confirm-box" onClick={(e) => e.stopPropagation()} style={{ width: 440 }}>
-        <h2>Add grant</h2>
+        <h2>Add service grants</h2>
         <form onSubmit={submit}>
           {err ? <div className="form-err">{err}</div> : null}
           <div className="field">
@@ -301,26 +301,10 @@ function AddGrantDialog({
               ))}
             </select>
           </div>
-          <div className="field">
-            <label htmlFor="ag-service">Service</label>
-            <select id="ag-service" value={slug} onChange={(e) => { setSlug(e.target.value); setRole(services.find((s) => s.slug === e.target.value)?.roles[0]?.key ?? '') }}>
-              {services.map((s) => <option key={s.slug} value={s.slug}>{s.name}</option>)}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="ag-role">Role</label>
-            <select id="ag-role" value={role} onChange={(e) => setRole(e.target.value)}>
-              {svc?.roles.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}
-            </select>
-            {roleDesc ? <div className="muted" style={{ fontSize: 12, marginTop: 5 }}>{roleDesc}</div> : null}
-          </div>
+          <div className="field"><label>Services and roles</label>{services.filter((s) => s.is_active).map((s) => <fieldset key={s.slug} style={{ marginBottom: 10 }}><legend>{s.name}</legend>{s.roles.map((r) => <label className="grant-row" key={r.key}><input type="checkbox" checked={selection[s.slug]?.includes(r.key) ?? false} onChange={() => toggleRole(s.slug, r.key)} /><span className="g"><span className="nm">{r.name}</span><span className="mt">{r.description}</span></span></label>)}</fieldset>)}</div>
           <div className="field">
             <label htmlFor="ag-reason">Reason</label>
             <input id="ag-reason" value={reason} onChange={(e) => setReason(e.target.value)} required />
-          </div>
-          <div className="field">
-            <label htmlFor="ag-exp">Expires (optional)</label>
-            <input id="ag-exp" type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
           </div>
           <div className="row-actions">
             <button type="button" className="btn-q" onClick={onCancel} disabled={busy}>Cancel</button>
@@ -346,6 +330,7 @@ function BulkGrantDialog({
   const [bands, setBands] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<number | null>(null)
+  const [preview, setPreview] = useState<number | null>(null)
   const svc = services.find((s) => s.slug === slug)
 
   async function submit(e: React.FormEvent) {
@@ -353,8 +338,8 @@ function BulkGrantDialog({
     setBusy(true)
     try {
       const band = bands.split(',').map((b) => b.trim()).filter(Boolean)
-      const r = await mmosApi.admin.bulkGrant({ slug, role, band: band.length ? band : undefined })
-      setResult(r.count)
+      const r = await mmosApi.admin.bulkGrant({ slug, role, band: band.length ? band : undefined, preview: preview === null })
+      if (preview === null) setPreview(r.count); else setResult(r.count)
     } finally {
       setBusy(false)
     }
@@ -369,7 +354,7 @@ function BulkGrantDialog({
             <p>Granted to {result} employee{result === 1 ? '' : 's'}.</p>
             <div className="row-actions"><button className="btn-act" onClick={onDone}>Done</button></div>
           </>
-        ) : (
+        ) : preview !== null ? <><p>Validation passed. This will create {preview} grant{preview === 1 ? '' : 's'}; existing identical grants will be skipped.</p><div className="row-actions"><button className="btn-q" onClick={() => setPreview(null)}>Back</button><button className="btn-act" onClick={(e) => submit(e as any)}>Commit grants</button></div></> : (
           <form onSubmit={submit}>
             <div className="field">
               <label htmlFor="bg-service">Service</label>

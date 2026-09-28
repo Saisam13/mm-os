@@ -55,16 +55,14 @@ def issue_service_token(
     service = db.scalar(
         select(Service).where(Service.slug == body.slug, Service.is_active.is_(True))
     )
-    grant = None
+    grants = []
     if service is not None:
-        grant = db.scalar(
+        grants = list(db.scalars(
             select(Grant).where(Grant.user_id == user.id, Grant.service_id == service.id)
-        )
-        if grant is not None and grant.expires_at is not None:
-            if grant.expires_at <= datetime.now(timezone.utc):
-                grant = None
+        ))
+        grants = [g for g in grants if g.expires_at is None or g.expires_at > datetime.now(timezone.utc)]
 
-    if service is None or grant is None:
+    if service is None or not grants:
         audit(
             db,
             action="token.denied",
@@ -83,8 +81,9 @@ def issue_service_token(
         )
 
     token, jti, ttl = mint_service_token(
-        user=user, employee=employee, service_slug=service.slug, roles=[grant.role.key],
-        permissions=list(grant.role.permissions or []),
+        user=user, employee=employee, service_slug=service.slug,
+        roles=sorted({grant.role.key for grant in grants}),
+        permissions=sorted({permission for grant in grants for permission in (grant.role.permissions or [])}),
     )
     audit(
         db,

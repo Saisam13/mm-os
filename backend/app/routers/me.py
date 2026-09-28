@@ -18,10 +18,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..db import get_db
-from ..deps import current_employee, current_user
+from ..deps import CAPABILITIES, current_employee, current_user
 from urllib.parse import quote
 
-from ..models import Employee, Grant, Service, ServiceRole, User
+from ..models import Employee, Grant, Service, ServiceRole, User, UserCapability
 from ..onboarding import needs_onboarding
 from ..provision import FUNCTIONAL_JOB_TITLE, must_change_pin
 
@@ -100,21 +100,26 @@ def me(
         .order_by(Service.sort_order, Service.name)
     ).all()
 
-    services = [
-        {
+    by_service: dict[str, dict] = {}
+    for _grant, service, role in rows:
+        item = by_service.setdefault(service.slug, {
             "slug": service.slug,
             "name": service.name,
             "category": service.category,
             "role": role.key,
+            "roles": [],
             "launch_mode": service.launch_mode,
             "base_url": service.base_url,
             "icon": service.icon,
             # Live health checks are not this router's job (no agent owns a health poller
             # yet) — reporting "unknown" here is honest rather than guessing "up".
             "health": "unknown",
-        }
-        for _grant, service, role in rows
-    ]
+        })
+        item["roles"].append(role.key)
+    services = list(by_service.values())
+    capabilities = sorted(CAPABILITIES) if user.is_platform_admin else sorted(set(db.scalars(
+        select(UserCapability.capability).where(UserCapability.user_id == user.id)
+    ).all()))
 
     return {
         "user": {
@@ -128,6 +133,7 @@ def me(
             "band": employee.band,
             "approval_level": employee.approval_level,
             "is_platform_admin": user.is_platform_admin,
+            "capabilities": capabilities,
             # True while the person is still on a provisioned one-time PIN -- the shell routes
             # them to the change-PIN screen (routers/auth.py POST /api/auth/pin/change).
             "must_change_pin": must_change_pin(db, user),
