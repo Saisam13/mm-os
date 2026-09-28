@@ -29,12 +29,13 @@ def test_seed_services_in_house_vs_third_party_launch_mode(db):
 
     by_slug = {s.slug: s for s in db.scalars(select(models.Service))}
 
-    for slug in ("itemcode", "saleshub", "ocr", "purchase", "servicedesk", "spokedi", "samples"):
+    for slug in ("itemcode", "saleshub", "ocr", "purchase", "servicedesk", "spokedi", "samples", "minionboard"):
         assert by_slug[slug].launch_mode in ("handoff", "embed"), slug
 
-    # Regression guard: Sample Tracking is frameable and is expected to open
-    # inside the MMOS workspace, not through the new-tab handoff panel.
+    # Regression guard: Sample Tracking and Minionboard are frameable and are expected to
+    # open inside the MMOS workspace, not through the new-tab handoff panel.
     assert by_slug["samples"].launch_mode == "embed"
+    assert by_slug["minionboard"].launch_mode == "embed"
 
     for slug in ("erpnext", "twenty"):
         assert by_slug[slug].launch_mode == "external", slug
@@ -46,7 +47,7 @@ def test_seed_services_in_house_roles_have_descriptions(db):
 
     by_slug = {s.slug: s for s in db.scalars(select(models.Service))}
 
-    for slug in ("itemcode", "saleshub", "ocr", "purchase", "servicedesk", "spokedi", "samples"):
+    for slug in ("itemcode", "saleshub", "ocr", "purchase", "servicedesk", "spokedi", "samples", "minionboard"):
         svc = by_slug[slug]
         assert svc.roles, f"{slug} has no roles"
         for role in svc.roles:

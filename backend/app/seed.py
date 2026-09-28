@@ -288,6 +288,7 @@ PURCHASE_URL = os.environ.get("MMOS_SVC_PURCHASE_URL", "https://po.m-mines.in")
 SERVICEDESK_URL = os.environ.get("MMOS_SVC_SERVICEDESK_URL", "https://sd.m-mines.in")
 SPOKEDI_URL = os.environ.get("MMOS_SVC_SPOKEDI_URL", "https://spokedi.m-mines.in")
 SAMPLES_URL = os.environ.get("MMOS_SVC_SAMPLES_URL", "https://samples.m-mines.in")
+MINIONBOARD_URL = os.environ.get("MMOS_SVC_MINIONBOARD_URL", "https://minionboard.m-mines.in")
 # ERPNext is ALWAYS the production Frappe Cloud site, never UAT.
 ERPNEXT_URL = os.environ.get(
     "MMOS_SVC_ERPNEXT_URL", "https://minimines.m.frappe.cloud/app/home"
@@ -370,6 +371,23 @@ SERVICES: list[dict] = [
             ("qaqc", "QA/QC", "Plan tests, record immutable result revisions and manage laboratory work."),
             ("hod", "HOD", "Approve controlled catalogue changes and authorized workflow overrides."),
             ("admin", "Administrator", "Manage access, ERP environment selection and service configuration."),
+        ],
+    ),
+    dict(
+        slug="minionboard", name="HR Onboarding & IT Assets", category="hr",
+        # Minionboard (codeunderscrap/minionboard): candidate onboarding, employee directory,
+        # statutory forms and the ITAware IT asset register. Its /_mmos/session exchanges the
+        # token for its own Secure, SameSite=None session and it only allows framing from
+        # m-mines.in, so it opens inside the workspace. Role keys match its local roles; it
+        # holds HR personal data, so it has no default role (not in LOWEST_ROLES).
+        base_url=MINIONBOARD_URL, launch_mode="embed",
+        roles=[
+            ("hr", "HR", "Invite candidates, review applications, and maintain the employee "
+             "directory, statutory forms, IT asset allocation and ITAware reconciliation."),
+            ("hr_manager", "HR Manager", "Everything HR can do, plus approve submitted "
+             "applications into the employee directory and complete offboarding."),
+            ("admin", "Super Admin", "Everything an HR Manager can do, plus manage Minionboard "
+             "staff accounts and delete candidates or employees."),
         ],
     ),
     dict(
