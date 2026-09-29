@@ -173,7 +173,7 @@ class Service(Base):
     tagline: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str] = mapped_column(String(24), default="internal", nullable=False)
     base_url: Mapped[str] = mapped_column(Text, nullable=False)
-    icon: Mapped[str | None] = mapped_column(String(48))
+    icon: Mapped[str | None] = mapped_column(Text)
     launch_mode: Mapped[str] = mapped_column(String(16), default="handoff", nullable=False)
     has_public_surface: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     public_url: Mapped[str | None] = mapped_column(Text)

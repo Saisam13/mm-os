@@ -140,21 +140,29 @@ export function Dashboard() {
           </div>
         ) : embeds ? (
           <div className={`ws-embed${maximized ? ' max' : ''}`}>
-            <div className="ws-appbar">
-              <div className="ttl">
-                <h2>{active.name}</h2>
-                <span className="chip cond">{active.role}</span>
+            {!maximized && (
+              <div className="ws-appbar">
+                <div className="ttl">
+                  <h2>{active.name}</h2>
+                  <span className="chip cond">{active.role}</span>
+                </div>
+                <div className="actions">
+                  <button className="btn-icon" onClick={() => setMaximized(true)} title="Full screen">
+                    <Maximize /> Full screen
+                  </button>
+                  <a className="btn-icon" href={frameUrl ?? active.base_url} target="_blank" rel="noopener noreferrer">
+                    <External /> Open tab
+                  </a>
+                </div>
               </div>
-              <div className="actions">
-                <button className="btn-icon" onClick={() => setMaximized((v) => !v)} title={maximized ? 'Exit full screen' : 'Full screen'}>
-                  {maximized ? <Minimize /> : <Maximize />}
-                  {maximized ? 'Exit full screen' : 'Full screen'}
-                </button>
-                <a className="btn-icon" href={frameUrl ?? active.base_url} target="_blank" rel="noopener noreferrer">
-                  <External /> Open tab
-                </a>
-              </div>
-            </div>
+            )}
+            
+            {maximized && (
+              <button className="ws-float-close" onClick={() => setMaximized(false)} title="Exit full screen" aria-label="Exit full screen">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            )}
+
             {/* Authenticated in-frame: the src is the minted `/_mmos/accept
                 #token=…` handoff URL, not the bare base_url, so the service
                 signs the visitor in inside the frame. Same iframe config as

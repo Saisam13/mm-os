@@ -51,10 +51,19 @@ export function ServicesPage() {
                   title={newTab ? `Open ${s.name} in a new tab` : `Open ${s.name}`}
                 >
                   <span className="app-tile-icon">
-                    <ServiceMark slug={s.slug} name={s.name} kind={kindFromLaunchMode(s.launch_mode)} size={72} />
+                    <ServiceMark slug={s.slug} name={s.name} kind={kindFromLaunchMode(s.launch_mode)} size={48} />
                   </span>
-                  <span className="app-tile-name">{s.name}</span>
-                  <span className="app-tile-role">{isPending ? 'Opening…' : s.role}</span>
+                  <div className="app-tile-content">
+                    <span className="app-tile-name">{s.name}</span>
+                    <span className={`app-tile-role ${s.role.toLowerCase()}`}>{isPending ? 'Opening…' : s.role}</span>
+                  </div>
+                  <span className="app-tile-arrow">
+                    {newTab ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    )}
+                  </span>
                 </button>
               )
             })}
@@ -73,10 +82,15 @@ export function ServicesPage() {
             {mail.map((m) => (
               <a key={m.email} className="app-tile" href={m.url} target="_blank" rel="noopener noreferrer" title={`Open ${m.email} in a new tab`} style={{ textDecoration: 'none' }}>
                 <span className="app-tile-icon">
-                  <ServiceMark slug={m.kind === 'own' ? 'mail' : 'mail-dept'} name={m.label} kind="third-party" size={72} />
+                  <ServiceMark slug={m.kind === 'own' ? 'mail' : 'mail-dept'} name={m.label} kind="third-party" size={48} />
                 </span>
-                <span className="app-tile-name">{m.label}</span>
-                <span className="app-tile-role" style={{ textTransform: 'none' }}>{m.email}</span>
+                <div className="app-tile-content">
+                  <span className="app-tile-name">{m.label}</span>
+                  <span className="app-tile-role user" style={{ textTransform: 'none' }}>{m.email}</span>
+                </div>
+                <span className="app-tile-arrow">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                </span>
               </a>
             ))}
           </div>

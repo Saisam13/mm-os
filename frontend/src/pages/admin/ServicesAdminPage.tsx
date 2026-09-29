@@ -86,13 +86,23 @@ function ServiceDrawer({
 
   useEffect(() => { setForm(service); setKey(null) }, [service])
 
-  async function save() {
+    async function save() {
     setSaving(true)
     try {
-      const updated = await mmosApi.admin.updateService(service.slug, {
+      const payload: any = {
         name: form.name, tagline: form.tagline, category: form.category,
         base_url: form.base_url, launch_mode: form.launch_mode, is_active: form.is_active,
-      })
+        icon: form.icon,
+      }
+
+      // Safeguard: The production database currently limits icons to 48 chars. 
+      // Base64 images are much longer. This prevents the 500 crash.
+      if (payload.icon && payload.icon.length > 48) {
+        alert("The live database currently limits icons to 48 characters. \n\nI have already updated models.py locally to 'Text'. Please commit and deploy your code so your live server database updates, then image uploads will work perfectly!")
+        delete payload.icon;
+      }
+
+      const updated = await mmosApi.admin.updateService(service.slug, payload)
       onChanged({ ...service, ...updated })
     } finally {
       setSaving(false)
@@ -130,6 +140,27 @@ function ServiceDrawer({
       <div className="field">
         <label htmlFor="s-tagline">Tagline</label>
         <input id="s-tagline" value={form.tagline ?? ''} onChange={(e) => setForm({ ...form, tagline: e.target.value })} />
+      </div>
+      <div className="field">
+        <label>Service Icon</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 8, background: 'var(--petrol-100)', color: 'var(--petrol)', display: 'grid', placeItems: 'center', overflow: 'hidden', fontFamily: 'var(--fc)', fontSize: 20, fontWeight: 700 }}>
+            {form.icon ? <img src={form.icon} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Icon" /> : form.name.charAt(0).toUpperCase()}
+          </div>
+          <div style={{ flex: 1 }}>
+            <label className="btn-q" style={{ cursor: 'pointer', display: 'inline-block' }}>
+              Upload Image
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const r = new FileReader();
+                r.onload = (evt) => setForm({ ...form, icon: evt.target?.result as string });
+                r.readAsDataURL(file);
+              }} />
+            </label>
+            <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>Square, transparent PNG or SVG recommended.</div>
+          </div>
+        </div>
       </div>
       <div className="field">
         <label htmlFor="s-url">Base URL</label>
