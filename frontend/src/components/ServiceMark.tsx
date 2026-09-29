@@ -37,14 +37,6 @@ export function ServiceMark({
     )
   }
 
-  if (kind === 'in-house') {
-    return (
-      <span className="svc-mark cond" style={{ ...style, background: 'var(--petrol)' }} aria-hidden="true">
-        {deriveInitials(name)}
-      </span>
-    )
-  }
-
   if (!imgFailed) {
     return (
       <span className="svc-mark" style={style} aria-hidden="true">
@@ -52,7 +44,16 @@ export function ServiceMark({
           src={`/service-marks/${slug}.svg`}
           alt=""
           onError={() => setImgFailed(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
         />
+      </span>
+    )
+  }
+
+  if (kind === 'in-house') {
+    return (
+      <span className="svc-mark cond" style={{ ...style, background: 'var(--petrol)', color: '#fff' }} aria-hidden="true">
+        {initial}
       </span>
     )
   }
