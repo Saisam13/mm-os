@@ -51,7 +51,7 @@ export function ServicesPage() {
                   title={newTab ? `Open ${s.name} in a new tab` : `Open ${s.name}`}
                 >
                   <span className="app-tile-icon">
-                    <ServiceMark slug={s.slug} name={s.name} kind={kindFromLaunchMode(s.launch_mode)} size={48} />
+                    <ServiceMark slug={s.slug} name={s.name} icon={s.icon} kind={kindFromLaunchMode(s.launch_mode)} size={48} />
                   </span>
                   <div className="app-tile-content">
                     <span className="app-tile-name">{s.name}</span>

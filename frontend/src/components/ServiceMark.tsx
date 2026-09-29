@@ -17,15 +17,25 @@ export function ServiceMark({
   name,
   kind,
   size = 36,
+  icon,
 }: {
   slug: string
   name: string
   kind: 'in-house' | 'third-party'
   size?: number
+  icon?: string | null
 }) {
   const [imgFailed, setImgFailed] = useState(false)
   const initial = kind === 'in-house' ? deriveInitials(name) : (name[0] || '?').toUpperCase()
   const style: React.CSSProperties = { width: size, height: size, flexBasis: size }
+
+  if (icon) {
+    return (
+      <span className="svc-mark" style={style} aria-hidden="true">
+        <img src={icon} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </span>
+    )
+  }
 
   if (kind === 'in-house') {
     return (

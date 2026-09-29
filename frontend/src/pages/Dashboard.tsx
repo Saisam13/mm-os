@@ -106,7 +106,7 @@ export function Dashboard() {
                 className={`ws-svc${active?.slug === s.slug ? ' active' : ''}`}
                 onClick={() => select(s)}
               >
-                <ServiceMark slug={s.slug} name={s.name} kind={kindFromLaunchMode(s.launch_mode)} size={34} />
+                <ServiceMark slug={s.slug} name={s.name} icon={s.icon} kind={kindFromLaunchMode(s.launch_mode)} size={34} />
                 <span className="g">
                   <span className="nm">{s.name}</span>
                   <span className="rl">{s.role.replace(/_/g, ' ')}</span>
@@ -179,7 +179,7 @@ export function Dashboard() {
             ) : mintError ? (
               <div className="ws-center">
                 <div className="ws-launch">
-                  <ServiceMark slug={active.slug} name={active.name} kind={kindFromLaunchMode(active.launch_mode)} size={56} />
+                  <ServiceMark slug={active.slug} name={active.name} icon={active.icon} kind={kindFromLaunchMode(active.launch_mode)} size={56} />
                   <h2>Could not open {active.name}</h2>
                   <p>{mintError}</p>
                   <div className="row-actions">
@@ -205,7 +205,7 @@ export function Dashboard() {
         ) : external ? (
           <div className="ws-center">
             <div className="ws-launch">
-              <ServiceMark slug={active.slug} name={active.name} kind={kindFromLaunchMode(active.launch_mode)} size={56} />
+              <ServiceMark slug={active.slug} name={active.name} icon={active.icon} kind={kindFromLaunchMode(active.launch_mode)} size={56} />
               <h2>{active.name}</h2>
               <p>Opens in its own window. This service runs its own session.</p>
               <a className="btn-launch" href={active.base_url} target="_blank" rel="noopener noreferrer">
@@ -223,7 +223,7 @@ export function Dashboard() {
           // on). This is the path that was silently dropping the token before.
           <div className="ws-center">
             <div className="ws-launch">
-              <ServiceMark slug={active.slug} name={active.name} kind={kindFromLaunchMode(active.launch_mode)} size={56} />
+              <ServiceMark slug={active.slug} name={active.name} icon={active.icon} kind={kindFromLaunchMode(active.launch_mode)} size={56} />
               <h2>{active.name}</h2>
               {mintError ? (
                 <>
