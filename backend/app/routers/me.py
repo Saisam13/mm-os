@@ -110,7 +110,6 @@ def me(
             "roles": [],
             "launch_mode": service.launch_mode,
             "base_url": service.base_url,
-            "icon": service.icon,
             # Live health checks are not this router's job (no agent owns a health poller
             # yet) — reporting "unknown" here is honest rather than guessing "up".
             "health": "unknown",
