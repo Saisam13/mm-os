@@ -158,15 +158,14 @@ class LlmFeaturePolicy(BaseModel):
 
 
 # ── output shaping ───────────────────────────────────────────────────────────
-def _service_out(s: Service) -> dict:
-    return {
+def _service_out(s: Service, include_icon: bool = False) -> dict:
+    data = {
         "id": str(s.id),
         "slug": s.slug,
         "name": s.name,
         "tagline": s.tagline,
         "category": s.category,
         "base_url": s.base_url,
-        "icon": s.icon,
         "launch_mode": s.launch_mode,
         "has_public_surface": s.has_public_surface,
         "public_url": s.public_url,
@@ -175,15 +174,13 @@ def _service_out(s: Service) -> dict:
         "sort_order": s.sort_order,
         "permission_catalog": dict(s.permission_catalog or {}),
         "roles": [
-            # `description` added by B1 -- seam inventory section A.4: brand/UI-DECISIONS.md
-            # "role meanings shown inline" on the Access page has no data source without it.
-            # `ServiceRole.description` already existed on the frozen model; it was simply
-            # never serialized. `id` added alongside it so a role is addressable without a
-            # second round-trip through (service_id, key).
             _role_out(r)
             for r in s.roles
         ],
     }
+    if include_icon:
+        data["icon"] = s.icon
+    return data
 
 
 def _role_out(r: ServiceRole) -> dict:
@@ -354,7 +351,7 @@ def create_service(
         slug=service.slug,
     )
     db.commit()
-    return _service_out(service)
+    return _service_out(service, include_icon=True)
 
 
 @router.patch("/services/{slug}")
@@ -382,7 +379,7 @@ def patch_service(
         fields=list(changes),
     )
     db.commit()
-    return _service_out(service)
+    return _service_out(service, include_icon=True)
 
 
 @router.post("/services/{slug}/roles", status_code=201)
@@ -577,7 +574,7 @@ def import_roles(
     )
     db.commit()
     db.refresh(service)
-    return {"dry_run": False, **plan.as_dict(), "service_after": _service_out(service)}
+    return {"dry_run": False, **plan.as_dict(), "service_after": _service_out(service, include_icon=True)}
 
 
 @router.post("/services/{slug}/rotate-key")
