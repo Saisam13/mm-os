@@ -66,6 +66,34 @@ export function TopNav() {
       : []),
   ]
 
+  const [theme, setTheme] = useState(() => localStorage.getItem('mmos-theme') || 'dark')
+  
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('mmos-theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
+
+  const [installPrompt, setInstallPrompt] = useState<any>(null)
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const handleInstall = () => {
+    if (installPrompt) {
+      installPrompt.prompt()
+      installPrompt.userChoice.then(() => setInstallPrompt(null))
+    } else {
+      alert("To install the app, use your browser's 'Add to Home Screen' or 'Install' option.")
+    }
+  }
+
   const initials = me.user.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()
 
   return (
@@ -107,6 +135,12 @@ export function TopNav() {
         ) : null}
 
         <div className="topnav-sp" />
+        <button className="topnav-i" onClick={handleInstall} title="Install App">
+          Install App
+        </button>
+        <button className="topnav-i" onClick={toggleTheme} title="Toggle light/dark mode">
+          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+        </button>
         <button className="topnav-i" onClick={() => setPalOpen(true)}>
           Search
         </button>

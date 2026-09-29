@@ -14,18 +14,37 @@ import { kindFromLaunchMode } from '../lib/serviceKind'
 export function ServicesPage() {
   const { me } = useAuth()
   const { launch, pending, error, clearError } = useLaunchService()
+  const [search, setSearch] = React.useState('')
+  
   if (!me) return null
   const mail = me.mail ?? []
+  
+  const filteredServices = me.services.filter(s => 
+    s.name.toLowerCase().includes(search.toLowerCase()) || 
+    s.role.toLowerCase().includes(search.toLowerCase())
+  )
 
   return (
     <div className="page">
-      <div className="head">
+      <div className="head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1>Services</h1>
+        {me.services.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--surface)', borderRadius: 6, padding: '8px 12px', border: '1px solid var(--border)', width: 300 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input 
+              type="text" 
+              placeholder="Search services..." 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: 14, outline: 'none', width: '100%' }}
+            />
+          </div>
+        )}
       </div>
       {me.services.length === 0 ? (
         <div className="card">
           <div className="card-b flush">
-            <EmptyState title="No services yet" hint="Raise a request and IT will set you up." />
+            <EmptyState title="Welcome to MM OS!" hint="You don't have any apps yet. Please contact your IT administrator to request access." />
           </div>
         </div>
       ) : (
@@ -39,7 +58,12 @@ export function ServicesPage() {
             </div>
           ) : null}
           <div className="app-grid">
-            {me.services.map((s) => {
+            {filteredServices.length === 0 ? (
+              <div style={{ gridColumn: '1 / -1', padding: '40px', textAlign: 'center', color: 'var(--text-3)' }}>
+                No services found for "{search}"
+              </div>
+            ) : (
+              filteredServices.map((s) => {
               const isPending = pending === s.slug
               const newTab = s.launch_mode === 'external'
               return (
@@ -66,7 +90,8 @@ export function ServicesPage() {
                   </span>
                 </button>
               )
-            })}
+            })
+            )}
           </div>
         </>
       )}

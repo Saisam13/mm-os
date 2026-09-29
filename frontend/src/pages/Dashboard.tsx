@@ -23,6 +23,7 @@ export function Dashboard() {
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [maximized, setMaximized] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   // The authenticated handoff URL for the active embeddable app. `null` while
   // there is nothing to frame or while a mint is in flight.
@@ -84,6 +85,11 @@ export function Dashboard() {
 
   const select = (s: MeService) => setSearchParams({ app: s.slug })
 
+  const filteredServices = me.services.filter(s => 
+    s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    s.role.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   return (
     <div className="ws">
       <aside className={`ws-side${sidebarOpen ? '' : ' collapsed'}`}>
@@ -93,14 +99,32 @@ export function Dashboard() {
             <ChevronLeft />
           </button>
         </div>
+        
+        <div style={{ padding: '0 12px 8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', background: 'var(--surface-2)', borderRadius: 6, padding: '6px 10px', border: '1px solid var(--border)' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input 
+              type="text" 
+              placeholder="Search apps..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: 13, outline: 'none', width: '100%' }}
+            />
+          </div>
+        </div>
+
         <div className="ws-list">
           {me.services.length === 0 ? (
             <div className="ws-list-empty">
-              <div className="t">No services yet</div>
-              <div>Raise a request and IT will set you up.</div>
+              <div className="t" style={{color: 'var(--text)'}}>Welcome to MM OS!</div>
+              <div style={{color: 'var(--text-3)', lineHeight: '1.4'}}>You don't have any apps yet. Please contact your IT administrator to request access.</div>
             </div>
+          ) : filteredServices.length === 0 ? (
+             <div className="ws-list-empty" style={{color: 'var(--text-3)'}}>
+               <div>No apps found for "{searchQuery}"</div>
+             </div>
           ) : (
-            me.services.map((s) => (
+            filteredServices.map((s) => (
               <button
                 key={s.slug}
                 className={`ws-svc${active?.slug === s.slug ? ' active' : ''}`}
@@ -130,11 +154,11 @@ export function Dashboard() {
           <div className="ws-center">
             <div className="ws-empty">
               <span className="icon"><PanelIcon /></span>
-              <div className="t">{me.services.length === 0 ? 'No services yet' : 'No app open'}</div>
+              <div className="t">{me.services.length === 0 ? 'Welcome to MM OS!' : 'No app open'}</div>
               <div className="s">
                 {me.services.length === 0
-                  ? 'Raise a request and IT will set you up.'
-                  : 'Select a service from the sidebar.'}
+                  ? "You don't have any apps yet. Please contact your IT administrator."
+                  : 'Select an app from the sidebar.'}
               </div>
             </div>
           </div>

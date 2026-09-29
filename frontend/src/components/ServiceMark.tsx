@@ -32,7 +32,7 @@ export function ServiceMark({
   if (icon) {
     return (
       <span className="svc-mark" style={style} aria-hidden="true">
-        <img src={icon} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <img src={icon} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
       </span>
     )
   }
