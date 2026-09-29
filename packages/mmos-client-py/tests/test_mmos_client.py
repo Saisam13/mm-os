@@ -8,6 +8,7 @@ revocation SLA is *mechanically* correct without an actual 60-second wait.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import base64
 import json
 import time
@@ -448,3 +449,17 @@ def test_session_cookie_can_survive_mm_os_iframe(stub, keypair):
     set_cookie = resp.headers["set-cookie"].lower()
     assert "samesite=none" in set_cookie
     assert "secure" in set_cookie
+
+
+def test_token_issued_after_revocation_is_accepted(keypair, stub):
+    """A role change is revoke + grant. The token MM OS mints for the new role must get in;
+    only tokens issued at or before the revocation are cut off."""
+    pem, _, _ = keypair
+    mmos = make_mmos(stub)
+    revoked_at = datetime.now(timezone.utc) - timedelta(seconds=30)
+    stub.revoked_subs.append({"sub": "user:moved", "reason": "grant_changed", "at": revoked_at.isoformat()})
+    mmos.poller.poll_once()
+
+    with pytest.raises(TokenError):
+        mmos._verify(mint(pem, sub="user:moved", iat_delta=-60))   # old session
+    assert mmos._verify(mint(pem, sub="user:moved"))["sub"] == "user:moved"  # fresh token

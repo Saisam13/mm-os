@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from datetime import datetime
 
 import httpx
 
@@ -17,21 +18,32 @@ logger = logging.getLogger("mmos_client.denylist")
 
 class DenyList:
     def __init__(self):
-        self._subs: set[str] = set()
+        # sub -> latest revocation time (epoch seconds)
+        self._subs: dict[str, float] = {}
         self._jtis: set[str] = set()
         self._since: str | None = None
         self._lock = threading.Lock()
 
-    def is_revoked(self, *, sub: str | None, jti: str | None) -> bool:
+    def is_revoked(self, *, sub: str | None, jti: str | None, iat: float | None = None) -> bool:
+        """A subject revocation cuts off tokens issued at or before it, not the person forever.
+
+        MM OS revokes on every grant change (a role change is revoke + grant), so matching on
+        `sub` alone rejected the fresh token minted for the new role too, and locked the person
+        out until this process restarted. A token with no `iat` is treated as old.
+        """
         with self._lock:
-            return (sub is not None and sub in self._subs) or (jti is not None and jti in self._jtis)
+            if jti is not None and jti in self._jtis:
+                return True
+            at = self._subs.get(sub) if sub is not None else None
+            return at is not None and (iat is None or iat <= at)
 
     def merge(self, *, revoked_subjects: list[dict], revoked_jti: list, now: str) -> None:
         with self._lock:
             for row in revoked_subjects or []:
                 s = row.get("sub") if isinstance(row, dict) else row
                 if s:
-                    self._subs.add(s)
+                    at = _epoch(row.get("at") if isinstance(row, dict) else None)
+                    self._subs[s] = max(self._subs.get(s, 0.0), at)
             for row in revoked_jti or []:
                 j = row.get("jti") if isinstance(row, dict) else row
                 if j:
@@ -45,6 +57,17 @@ class DenyList:
     def snapshot(self) -> tuple[set, set]:
         with self._lock:
             return set(self._subs), set(self._jtis)
+
+
+def _epoch(value) -> float:
+    """Revocation time as epoch seconds; "now" when missing or unparseable, which still cuts
+    off every token issued before this poll."""
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            pass
+    return time.time()
 
 
 class DenyListPoller:

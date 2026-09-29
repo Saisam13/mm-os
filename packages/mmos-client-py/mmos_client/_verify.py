@@ -98,7 +98,8 @@ def verify_token(
     # 6 — deny-list (sub or jti)
     sub = claims.get("sub")
     jti = claims.get("jti")
-    if denylist.is_revoked(sub=sub, jti=jti):
+    iat = claims.get("iat")
+    if denylist.is_revoked(sub=sub, jti=jti, iat=iat if isinstance(iat, (int, float)) else None):
         raise TokenError("revoked")
 
     # 7 — roles: returned on the claims as-is; require_role() does the mapping.
