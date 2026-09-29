@@ -163,3 +163,34 @@ def test_service_token_carries_permissions(client, db, make_user, sign_in, make_
     claims = jwt.get_unverified_claims(r.json()["access_token"])
     assert claims["roles"] == ["admin"]
     assert "admin" in claims["permissions"]
+
+
+def test_committed_purchase_file_adds_editor_and_gives_no_default(
+    client, db, make_user, make_employee, sign_in, make_service, make_grant
+):
+    # Project Module guards every write with the `editor` role, which MM OS never had.
+    service, roles = make_service(slug="purchase", roles=("viewer", "admin"))
+    admin = make_user(is_platform_admin=True)
+    sign_in(admin)
+    old_viewer = make_user()
+    make_grant(old_viewer, service, roles["viewer"])
+    buyer = make_user(employee=make_employee(hr_department="Purchase"))
+    other = make_user(employee=make_employee(hr_department="Finance"))
+
+    r = client.post("/api/admin/services/purchase/roles/import?dry_run=false", json=committed("purchase"))
+    assert r.status_code == 200, r.text
+    assert r.json()["roles_created"] == ["editor"]
+    assert r.json()["roles_removed"] == []
+
+    db.expire_all()
+    def role_of(u):
+        g = db.scalar(select(models.Grant).where(models.Grant.user_id == u.id, models.Grant.service_id == service.id))
+        return g.role.key if g else None
+
+    assert role_of(old_viewer) == "viewer"   # mode "missing": existing grants untouched
+    assert role_of(admin) == "admin"
+    # No default role: department access comes from the people sheet, not this file.
+    assert role_of(buyer) is None
+    assert role_of(other) is None
+    after = {r["key"]: r for r in r.json()["service_after"]["roles"]}
+    assert not any(role["is_default"] for role in after.values())

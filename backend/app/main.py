@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import db_healthy
+from .embed_cors import EmbedCors
 from .middleware import NetworkGate, RequestId, SecurityHeaders
 from .routers import agent, auth, me, people, platform, tokens
 from .security import jwks
@@ -34,6 +35,7 @@ from .security import jwks
 cfg = settings()
 app = FastAPI(title="MM OS", version=cfg.version, docs_url=None, redoc_url=None)
 
+app.add_middleware(EmbedCors)
 app.add_middleware(SecurityHeaders)
 app.add_middleware(NetworkGate)
 app.add_middleware(RequestId)

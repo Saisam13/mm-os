@@ -1,0 +1,36 @@
+{
+  "format": "mmos-roles/1",
+  "service": "purchase",
+  "permissions": {
+    "view": "See the dashboards, projects, POs, payments, vendors, timeline, anomalies and reports, and export them",
+    "edit": "Accept anomalies, set budgets, head owners, expected dates and PO aliases, save layouts and report templates",
+    "setup": "Settings: data sources, offline workbook uploads, email alerts (sender, recipients, test send)"
+  },
+  "roles": [
+    {
+      "key": "viewer",
+      "name": "Viewer",
+      "description": "Sees every dashboard and report and can export them. Changes nothing.",
+      "permissions": ["view"]
+    },
+    {
+      "key": "editor",
+      "name": "Editor",
+      "description": "Everything a viewer can do, plus accept anomalies, set budgets, owners, expected dates and PO aliases, and save layouts and report templates. Project Module guards every change with this one role, so an editor can also reach Settings.",
+      "permissions": ["view", "edit", "setup"]
+    },
+    {
+      "key": "admin",
+      "name": "Administrator",
+      "description": "Everything an editor can do. Held by the people who own the data sources and email alerts.",
+      "permissions": ["view", "edit", "setup"]
+    }
+  ],
+  "remove_unlisted": false,
+  "assign": {
+    "mode": "missing",
+    "rules": [
+      {"platform_admin": true, "role": "admin"}
+    ]
+  }
+}
