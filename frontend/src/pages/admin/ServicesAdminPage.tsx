@@ -95,13 +95,6 @@ function ServiceDrawer({
         icon: form.icon,
       }
 
-      // Safeguard: The production database currently limits icons to 48 chars. 
-      // Base64 images are much longer. This prevents the 500 crash.
-      if (payload.icon && payload.icon.length > 48) {
-        alert("The live database currently limits icons to 48 characters. \n\nI have already updated models.py locally to 'Text'. Please commit and deploy your code so your live server database updates, then image uploads will work perfectly!")
-        delete payload.icon;
-      }
-
       const updated = await mmosApi.admin.updateService(service.slug, payload)
       onChanged({ ...service, ...updated })
     } finally {
