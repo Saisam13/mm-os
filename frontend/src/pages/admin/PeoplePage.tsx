@@ -181,6 +181,17 @@ function PersonDrawer({
     }
   }
 
+  async function doReactivate() {
+    if (!employee.user_id) return
+    setDeactivating(true)
+    try {
+      await mmosApi.admin.setUserActive(employee.user_id, true)
+      onSaved({ ...employee, is_active: true })
+    } finally {
+      setDeactivating(false)
+    }
+  }
+
   async function setNewPin() {
     if (!employee.user_id || !pin.trim()) return
     setPinBusy(true)
@@ -259,7 +270,10 @@ function PersonDrawer({
       {employee.is_platform_admin ? (
         <span className="chip pet">Protected IT Admin · no normal deactivate action</span>
       ) : employee.is_active === false ? (
-        <span className="chip">Already deactivated</span>
+        <>
+          <span className="chip" style={{ marginRight: 8 }}>Deactivated</span>
+          <button className="btn-q" onClick={doReactivate} disabled={deactivating}>{deactivating ? 'Reactivating…' : 'Reactivate person'}</button>
+        </>
       ) : (
         <button className="btn-q btn-danger" onClick={openDeactivateConfirm}>Deactivate person</button>
       )}
