@@ -63,6 +63,23 @@ _RULE_KEYS = {"platform_admin", "is_approver", "has_approval_level", "band", "de
 _REVOCATION_TTL = timedelta(hours=2)
 
 
+def revoke_role_holders(db: OrmSession, role: ServiceRole, *, actor: User | None, reason: str,
+                        now: datetime | None = None) -> int:
+    """Cut off live sessions of everyone holding `role`, so a changed permission list reaches
+    the service on their next request instead of when their session expires. Services reject
+    only tokens issued at or before the revocation, so holders just pass back through MM OS
+    and come in with the new permissions. Returns how many people were revoked."""
+    now = now or datetime.now(timezone.utc)
+    subjects = sorted({u.subject for u in db.scalars(
+        select(User).join(Grant, Grant.user_id == User.id).where(Grant.service_role_id == role.id)
+    )})
+    for subject in subjects:
+        db.add(Revocation(subject=subject, service_id=role.service_id, reason=reason,
+                          revoked_by=actor.id if actor else None, revoked_at=now,
+                          purge_after=now + _REVOCATION_TTL))
+    return len(subjects)
+
+
 class RoleFileError(ValueError):
     """The file is malformed. `problems` lists every issue, not just the first."""
 
@@ -373,10 +390,13 @@ def apply(
             plan.roles_created.append(spec["key"])
         else:
             changed = any(getattr(role, k) != v for k, v in fields.items() if k != "sort_order")
+            perms_changed = list(role.permissions or []) != list(spec["permissions"])
             for k, v in fields.items():
                 setattr(role, k, v)
             if changed:
                 plan.roles_updated.append(spec["key"])
+            if perms_changed:
+                revoke_role_holders(db, role, actor=actor, reason="role_permissions_changed", now=now)
         by_key[spec["key"]] = role
     db.flush()
 

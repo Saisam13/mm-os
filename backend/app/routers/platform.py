@@ -39,7 +39,7 @@ from ..models import (
     User,
     UserCapability,
 )
-from ..roles_io import RoleFileError
+from ..roles_io import RoleFileError, revoke_role_holders
 from ..roles_io import committed as committed_role_file
 from ..roles_io import apply as apply_role_file
 from ..roles_io import export as export_role_file
@@ -466,8 +466,12 @@ def patch_role(
         changes["permissions"] = list(dict.fromkeys(changes["permissions"]))
     if changes.get("is_default"):
         _clear_default(service)
+    perms_changed = "permissions" in changes and list(role.permissions or []) != changes["permissions"]
     for k, v in changes.items():
         setattr(role, k, v)
+    if perms_changed:
+        # Holders' live sessions carry the old permission list; send them back through MM OS.
+        revoke_role_holders(db, role, actor=admin, reason="role_permissions_changed")
     audit(
         db,
         action="service.role_update",

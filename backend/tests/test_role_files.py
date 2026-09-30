@@ -194,3 +194,27 @@ def test_committed_purchase_file_adds_editor_and_gives_no_default(
     assert role_of(other) is None
     after = {r["key"]: r for r in r.json()["service_after"]["roles"]}
     assert not any(role["is_default"] for role in after.values())
+
+
+def test_changing_a_roles_permissions_revokes_its_holders(client, db, make_user, sign_in, make_service, make_grant):
+    """Holders' live sessions carry the old permission list, so they go back through MM OS."""
+    service, roles = make_service(slug="purchase", roles=("viewer", "admin"))
+    sign_in(make_user(is_platform_admin=True))
+    holder = make_user()
+    make_grant(holder, service, roles["viewer"])
+    bystander = make_user()
+    make_grant(bystander, service, roles["admin"])
+
+    def revoked(u):
+        return db.scalar(select(models.Revocation).where(
+            models.Revocation.subject == u.subject, models.Revocation.reason == "role_permissions_changed"))
+
+    # renaming only: nobody is revoked
+    assert client.patch("/api/admin/services/purchase/roles/viewer", json={"name": "Reader"}).status_code == 200
+    db.expire_all()
+    assert revoked(holder) is None
+
+    client.post("/api/admin/services/purchase/roles/import?dry_run=false", json=committed("purchase"))
+    db.expire_all()
+    assert revoked(holder) is not None      # viewer went from [] to ["view"]
+    assert revoked(bystander) is not None   # admin went from [] to view/edit/setup
