@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -72,6 +73,19 @@ def jwks() -> dict:
 
 
 # ── service tokens ────────────────────────────────────────────────────────
+def sorted_keys_digest(keys) -> str:
+    """SHA-256 hex over the sorted keys as compact JSON, the one serialisation the access
+    contract (docs/17-access-contract.md) uses for both `pv` and a manifest's `catalog_hash`:
+    JS `JSON.stringify(keys.sort())`, Python `json.dumps(sorted(keys), separators=(",", ":"))`."""
+    return hashlib.sha256(json.dumps(sorted(keys), separators=(",", ":")).encode()).hexdigest()
+
+
+def permissions_version(permissions) -> str:
+    """The token's `pv` claim: first 12 hex of the digest over its permission list. A service
+    compares it with the `pv` it stored at handoff to notice the list changed."""
+    return sorted_keys_digest(list(permissions or []))[:12]
+
+
 def mint_service_token(
     *, user, employee, service_slug: str, roles: list[str], permissions: list[str] | None = None
 ) -> tuple[str, str, int]:
@@ -100,6 +114,7 @@ def mint_service_token(
         # What the role may do at this service, from the role's permission list. A service
         # that predates permissions ignores it and keeps deciding from `roles`.
         "permissions": list(permissions or []),
+        "pv": permissions_version(permissions),
         "platform_admin": user.is_platform_admin,
     }
     token = jwt.encode(

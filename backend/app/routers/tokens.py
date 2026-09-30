@@ -35,6 +35,22 @@ class TokenRequest(BaseModel):
     slug: str
 
 
+def live_grants(db: OrmSession, user_id, service: Service) -> list[Grant]:
+    """The person's grants on `service` that have not expired."""
+    now = datetime.now(timezone.utc)
+    grants = db.scalars(select(Grant).where(Grant.user_id == user_id, Grant.service_id == service.id))
+    return [g for g in grants if g.expires_at is None or g.expires_at > now]
+
+
+def token_access(grants: list[Grant]) -> tuple[list[str], list[str]]:
+    """(roles, permissions) exactly as a service token carries them: sorted role keys, and the
+    sorted union of those roles' permission lists. Admin -> People "view as" reads the same
+    function, so what it shows is what the service receives."""
+    roles = sorted({grant.role.key for grant in grants})
+    permissions = sorted({p for grant in grants for p in (grant.role.permissions or [])})
+    return roles, permissions
+
+
 @router.post("/token/service")
 def issue_service_token(
     body: TokenRequest,
@@ -55,12 +71,7 @@ def issue_service_token(
     service = db.scalar(
         select(Service).where(Service.slug == body.slug, Service.is_active.is_(True))
     )
-    grants = []
-    if service is not None:
-        grants = list(db.scalars(
-            select(Grant).where(Grant.user_id == user.id, Grant.service_id == service.id)
-        ))
-        grants = [g for g in grants if g.expires_at is None or g.expires_at > datetime.now(timezone.utc)]
+    grants = live_grants(db, user.id, service) if service is not None else []
 
     if service is None or not grants:
         audit(
@@ -80,10 +91,10 @@ def issue_service_token(
             },
         )
 
+    roles, permissions = token_access(grants)
     token, jti, ttl = mint_service_token(
         user=user, employee=employee, service_slug=service.slug,
-        roles=sorted({grant.role.key for grant in grants}),
-        permissions=sorted({permission for grant in grants for permission in (grant.role.permissions or [])}),
+        roles=roles, permissions=permissions,
     )
     audit(
         db,

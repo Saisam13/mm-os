@@ -27,7 +27,8 @@ live in `app/role_files/<slug>.json` and ship inside the image.
 
 Semantics, in the order they are applied:
 
-1. `permissions` replaces the service's permission catalog. A role may only list keys from it.
+1. `permissions` replaces the service's permission catalog. A role may only list keys from it,
+   and when the catalog is non-empty every role must list at least one (docs/17-access-contract.md).
 2. Each role is created or updated by `key`. List order is the access order, lowest first.
 3. `replaces` moves every grant on the named old roles onto this one, then deletes them.
    This is how `viewer` becomes `associate` without anyone losing access.
@@ -171,6 +172,11 @@ def validate(doc: dict, *, slug: str | None = None) -> dict:
         unknown = [x for x in perms if x not in catalog]
         if unknown:
             p.append(f"{where} lists permissions not in the catalog: {', '.join(map(str, unknown))}")
+        elif catalog and not perms:
+            # Access contract: a service falls back to its own suggested roles when a token
+            # carries no permissions, so an empty list would silently mean "whatever the
+            # service thinks this role is". Every role says what it may do.
+            p.append(f"{where} has no permissions; give it at least one from the catalog")
         replaces = r.get("replaces", [])
         if not isinstance(replaces, list) or not all(isinstance(x, str) for x in replaces):
             p.append(f"{where}.replaces must be a list of role keys")

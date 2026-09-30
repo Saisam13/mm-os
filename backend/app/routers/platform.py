@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import access_contract
 from ..config import settings
 from ..db import get_db
 from ..deps import CAPABILITIES, audit, client_ip, current_user, has_capability, require_admin, require_capability
@@ -44,8 +45,9 @@ from ..roles_io import committed as committed_role_file
 from ..roles_io import apply as apply_role_file
 from ..roles_io import export as export_role_file
 from ..roles_io import validate as validate_role_file
-from ..security import new_service_key
+from ..security import new_service_key, permissions_version
 from .agent import _config_version
+from .tokens import live_grants, token_access
 
 
 def _employee_of(db: OrmSession, user_id: uuid.UUID) -> Employee | None:
@@ -326,6 +328,43 @@ async def _probe_service(http: httpx.AsyncClient, svc: dict) -> dict:
     return out
 
 
+# ── access contract (docs/17-access-contract.md) ─────────────────────────────
+@router.get("/services/contract")
+async def services_contract(admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)):
+    """Does each service follow the access contract, and does its declared permission list
+    match the one MM OS holds? One manifest fetch per service, in parallel."""
+    services = list(db.scalars(select(Service).order_by(Service.sort_order, Service.name)))
+    results = await access_contract.check_services(services)
+    return {"checked_at": datetime.now(timezone.utc).isoformat(), "services": results}
+
+
+@router.get("/services/{slug}/contract")
+async def service_contract(slug: str, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)):
+    result, _ = await access_contract.check_service(_service_or_404(db, slug))
+    return result
+
+
+@router.get("/services/{slug}/roles/from-service")
+async def role_file_from_service(slug: str, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)):
+    """A role-file draft built from the service's own manifest. Writes nothing: the admin
+    reviews it through the ordinary dry-run import (POST .../roles/import) and applies it
+    from there."""
+    service = _service_or_404(db, slug)
+    list(service.roles)  # load before the await; the draft reads them afterwards
+    result, manifest = await access_contract.check_service(service)
+    if manifest is None:
+        unreachable = result["status"] == access_contract.UNREACHABLE
+        raise HTTPException(502 if unreachable else 422, detail={
+            "error": result["status"],
+            "message": (f"Could not reach {service.name} to read its permission list"
+                        if unreachable else
+                        f"{service.name} does not publish a permission list MM OS can read")
+                       + (f" ({result['detail']})." if result["detail"] else "."),
+        })
+    file, notes = access_contract.draft_role_file(service, manifest)
+    return {"contract": result, "file": file, "notes": notes}
+
+
 @router.post("/services", status_code=201)
 def create_service(
     body: ServiceCreate,
@@ -426,12 +465,21 @@ def add_role(
 
 
 def _check_permissions(service: Service, perms: list[str]) -> None:
-    unknown = [p for p in perms if p not in (service.permission_catalog or {})]
+    catalog = service.permission_catalog or {}
+    unknown = [p for p in perms if p not in catalog]
     if unknown:
         raise HTTPException(422, detail={
             "error": "unknown_permission",
             "message": f"Not in {service.slug}'s permission list: {', '.join(unknown)}. "
                        "Import a role file to declare new permissions.",
+        })
+    if catalog and not perms:
+        # docs/17-access-contract.md: a token with no permissions makes the service fall back
+        # to its own idea of the role, so MM OS never hands one out for a declared service.
+        raise HTTPException(422, detail={
+            "error": "empty_permissions",
+            "message": f"A {service.name} role must be allowed to do at least one thing. "
+                       "Tick at least one permission.",
         })
 
 
@@ -462,6 +510,7 @@ def patch_role(
     role = _role_or_404(db, service, key)
     changes = body.model_dump(exclude_unset=True)
     if "permissions" in changes:
+        changes["permissions"] = changes["permissions"] or []
         _check_permissions(service, changes["permissions"])
         changes["permissions"] = list(dict.fromkeys(changes["permissions"]))
     if changes.get("is_default"):
@@ -604,6 +653,43 @@ def rotate_key(
     )
     db.commit()
     return {"service_key": raw}
+
+
+# ── view as ───────────────────────────────────────────────────────────────────
+@router.get("/people/{user_id}/access")
+def person_access(user_id: uuid.UUID, admin: User = Depends(require_admin), db: OrmSession = Depends(get_db)):
+    """What each service would receive for this person: roles, permissions and `pv`, computed
+    by the same code the token handoff uses (routers/tokens.py) without minting anything.
+    `contract` is the last access-contract check of that service in this worker, or None."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, detail={"error": "user_not_found"})
+    emp = db.get(Employee, user.employee_id)
+    service_ids = set(db.scalars(select(Grant.service_id).where(Grant.user_id == user.id)))
+    services = db.scalars(
+        select(Service).where(Service.id.in_(service_ids)).order_by(Service.sort_order, Service.name)
+    ) if service_ids else []
+    rows = []
+    for service in services:
+        grants = live_grants(db, user.id, service)
+        if not grants:
+            continue
+        roles, permissions = token_access(grants)
+        last = access_contract.last_result(service.slug)
+        rows.append({
+            "slug": service.slug,
+            "name": service.name,
+            "is_active": service.is_active,
+            "roles": roles,
+            "permissions": permissions,
+            "pv": permissions_version(permissions),
+            "contract": {"status": last["status"], "checked_at": last["checked_at"]} if last else None,
+        })
+    return {
+        "user_id": str(user.id),
+        "can_sign_in": bool(user.is_active and emp is not None and emp.status == "active"),
+        "services": rows,
+    }
 
 
 # ── grants ────────────────────────────────────────────────────────────────────
