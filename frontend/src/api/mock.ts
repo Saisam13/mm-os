@@ -13,6 +13,7 @@ import type { MmosApi } from './contract'
 import type {
   AccountBulkResult, AccountCreateResult, AccountRosterRow,
   AdminEmployee, AdminGrant, AdminLlmRow, AdminService, FunctionalAccount, Me, PublicService,
+  ServiceContract,
 } from './types'
 import { ApiRequestError } from './types'
 
@@ -105,6 +106,8 @@ const REGISTRY: AdminService[] = [
 const THIRD_PARTY = new Set(['erpnext', 'twenty'])
 
 // ── employees / users ────────────────────────────────────────────────────
+const MOCK_PERSONAL: Record<string, string | null> = {}
+
 const EMPLOYEES: AdminEmployee[] = [
   { id: 'e-01', employee_code: 'MM01', full_name: 'Anupam Kumar', work_email: 'anupam@m-mines.com', hr_department: 'CXO Office', division: 'Corporate', job_title: 'CEO', band: 'L5', approval_level: 'L5 (Executive)', is_approver: true, notes: null, status: 'active', user_id: 'u-01', auth_type: 'google', is_active: true, is_platform_admin: false, last_login_at: '2026-08-23T09:10:00Z' },
   { id: 'e-05', employee_code: 'MM05', full_name: 'Mandaleshvar Sharma', work_email: 'mandaleshvar@m-mines.com', hr_department: 'P-Spoke', division: 'Operations', job_title: 'Plant Head', band: 'L4', approval_level: 'L4 (Head)', is_approver: true, notes: null, status: 'active', user_id: 'u-05', auth_type: 'google', is_active: true, is_platform_admin: false, last_login_at: '2026-08-22T14:02:00Z' },
@@ -179,6 +182,22 @@ function upsertAccount(row: {
   const pin = commit ? mockPin() : null
   if (commit) FUNCTIONAL_ACCOUNTS.push(acct)
   return { account: acct, created: true, pin, employee_action: commit ? 'created' : 'would_create', user_action: commit ? 'created' : 'would_create' }
+}
+
+// The dev mock has no services to ask, so each one answers the access-contract check the
+// same way every time: external ones keep their own roles, one is down, one has drifted.
+function mockContract(s: AdminService): ServiceContract {
+  const base = { slug: s.slug, name: s.name, detail: null, added: [], removed: [], catalog_hash: null, checked_at: new Date().toISOString() }
+  if (s.launch_mode === 'external') return { ...base, status: 'no_manifest', detail: 'HTTP 404' }
+  if (s.slug === 'att') return { ...base, status: 'unreachable', detail: 'ConnectError: Name or service not known' }
+  if (s.slug === 'itemcode') return { ...base, status: 'drift', added: ['items.view', 'items.create'], removed: [], catalog_hash: '0f3c2a9b7d1e4c55' }
+  return { ...base, status: 'enforces', catalog_hash: '5a1d0c7e9b3f2a64' }
+}
+
+function refuseEmpty(s: AdminService, perms: string[]) {
+  if (Object.keys(s.permission_catalog ?? {}).length && !perms.length) {
+    throw new ApiRequestError(422, { error: 'empty_permissions', message: `A ${s.name} role must be allowed to do at least one thing. Tick at least one permission.`, request_id: 'mock' })
+  }
 }
 
 function grantsFor(userId: string): AdminGrant[] {
@@ -460,14 +479,17 @@ export const mock: MmosApi = {
       await delay(200)
       const s = REGISTRY.find((x) => x.slug === slug)
       if (!s) throw new ApiRequestError(404, { error: 'not_found', message: 'Service not found.', request_id: 'mock' })
-      const r = { id: `r-${Date.now()}`, key: role.key, name: role.name, description: role.description ?? null, is_default: false, permissions: [] }
+      refuseEmpty(s, role.permissions ?? [])
+      const r = { id: `r-${Date.now()}`, key: role.key, name: role.name, description: role.description ?? null, is_default: false, permissions: role.permissions ?? [] }
       s.roles.push(r)
       return r
     },
     async updateServiceRole(slug, key, patch) {
       await delay(150)
-      const r = REGISTRY.find((x) => x.slug === slug)?.roles.find((x) => x.key === key)
-      if (!r) throw new ApiRequestError(404, { error: 'role_not_found', message: 'Role not found.', request_id: 'mock' })
+      const svc = REGISTRY.find((x) => x.slug === slug)
+      const r = svc?.roles.find((x) => x.key === key)
+      if (!svc || !r) throw new ApiRequestError(404, { error: 'role_not_found', message: 'Role not found.', request_id: 'mock' })
+      if (patch.permissions) refuseEmpty(svc, patch.permissions)
       Object.assign(r, patch)
       return r
     },
@@ -490,6 +512,75 @@ export const mock: MmosApi = {
     async rotateServiceKey() {
       await delay(300)
       return `mmos_sk_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`
+    },
+
+    async checkContracts() {
+      await delay(300)
+      return REGISTRY.map(mockContract)
+    },
+    async checkContract(slug) {
+      await delay(250)
+      const s = REGISTRY.find((x) => x.slug === slug)
+      if (!s) throw new ApiRequestError(404, { error: 'service_not_found', message: 'Service not found.', request_id: 'mock' })
+      return mockContract(s)
+    },
+    async roleFileFromService(slug) {
+      await delay(300)
+      const s = REGISTRY.find((x) => x.slug === slug)
+      if (!s) throw new ApiRequestError(404, { error: 'service_not_found', message: 'Service not found.', request_id: 'mock' })
+      const contract = mockContract(s)
+      if (contract.status === 'no_manifest' || contract.status === 'unreachable') {
+        throw new ApiRequestError(contract.status === 'unreachable' ? 502 : 422, {
+          error: contract.status,
+          message: contract.status === 'unreachable'
+            ? `Could not reach ${s.name} to read its permission list (${contract.detail}).`
+            : `${s.name} does not publish a permission list MM OS can read (${contract.detail}).`,
+          request_id: 'mock',
+        })
+      }
+      const permissions = { view: 'See records', edit: 'Change records', setup: 'Settings' }
+      return {
+        contract,
+        file: {
+          format: 'mmos-roles/1', service: slug, permissions, remove_unlisted: false,
+          roles: [
+            { key: 'viewer', name: 'Viewer', description: null, default: false, permissions: ['view'] },
+            { key: 'editor', name: 'Editor', description: null, default: false, permissions: ['view', 'edit'] },
+            { key: 'admin', name: 'Admin', description: null, default: false, permissions: ['view', 'edit', 'setup'] },
+          ],
+        },
+        notes: ['The dev mock builds the same draft for every service.'],
+      }
+    },
+    async getPersonEmails(id) {
+      await delay(150)
+      const e = EMPLOYEES.find((x) => x.id === id)
+      return { official: e?.work_email ?? null, personal: MOCK_PERSONAL[id] ?? null, personal_verified: false }
+    },
+    async setPersonEmails(id, patch) {
+      await delay(200)
+      const e = EMPLOYEES.find((x) => x.id === id)
+      if (!e) throw new ApiRequestError(404, { error: 'not_found', message: 'Employee not found.', request_id: 'mock' })
+      if (patch.official !== undefined) e.work_email = patch.official || null
+      if (patch.personal !== undefined) MOCK_PERSONAL[id] = patch.personal || null
+      return { official: e.work_email, personal: MOCK_PERSONAL[id] ?? null, personal_verified: false }
+    },
+    async personAccess(userId) {
+      await delay(200)
+      return {
+        user_id: userId,
+        can_sign_in: true,
+        services: grantsFor(userId).map((g) => {
+          const svc = REGISTRY.find((s) => s.slug === g.service.slug)!
+          const role = svc.roles.find((r) => r.key === g.role.key)!
+          const c = mockContract(svc)
+          return {
+            slug: svc.slug, name: svc.name, is_active: svc.is_active,
+            roles: [role.key], permissions: [...role.permissions].sort(), pv: 'mockmockmock',
+            contract: { status: c.status, checked_at: c.checked_at },
+          }
+        }),
+      }
     },
 
     async listGrants(f) {

@@ -139,6 +139,14 @@ export const client: MmosApi = {
     rotateServiceKey: (slug) =>
       req(`/api/admin/services/${slug}/rotate-key`, { method: 'POST' }).then((r: any) => r.service_key),
 
+    checkContracts: () =>
+      req<{ services: any[] }>('/api/admin/services/contract').then((r) => r.services),
+    checkContract: (slug) => req(`/api/admin/services/${slug}/contract`),
+    roleFileFromService: (slug) => req(`/api/admin/services/${slug}/roles/from-service`),
+    personAccess: (userId) => req(`/api/admin/people/${userId}/access`),
+    getPersonEmails: (id) => req(`/api/admin/employees/${id}/emails`),
+    setPersonEmails: (id, patch) => req(`/api/admin/employees/${id}/emails`, { method: 'PUT', body: JSON.stringify(patch) }),
+
     listGrants: (f) => req<{ grants: any[] }>(`/api/admin/grants${qs(f)}`).then((r) => r.grants),
     createGrant: (payload) => req('/api/admin/grants', { method: 'POST', body: JSON.stringify(payload) }),
     deleteGrant: (id) => req(`/api/admin/grants/${id}`, { method: 'DELETE' }),

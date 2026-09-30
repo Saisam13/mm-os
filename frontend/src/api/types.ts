@@ -103,6 +103,12 @@ export interface ServiceToken {
 
 // ── admin: employees / users (fields per backend/app/models.py Employee+User;
 //    docs/03-api-contract.md gives no example body for these list endpoints) ──
+export interface PersonEmails {
+  official: string | null
+  personal: string | null
+  personal_verified: boolean
+}
+
 export interface AdminEmployee {
   id: string
   employee_code: string
@@ -249,6 +255,46 @@ export interface RoleImportPlan {
   unchanged_people: number
   warnings: string[]
   service_after?: AdminService
+}
+
+// ── admin: access contract (docs/17-access-contract.md) ────────────────
+// enforces: publishes /_mmos/manifest and its permission list matches MM OS's
+// drift: publishes one, but the lists differ (added = only the service has it)
+// no_manifest: no readable manifest, so the service still decides from role names
+export type ContractStatus = 'enforces' | 'drift' | 'no_manifest' | 'unreachable'
+
+export interface ServiceContract {
+  slug: string
+  name: string
+  status: ContractStatus
+  detail: string | null
+  added: string[]
+  removed: string[]
+  catalog_hash: string | null
+  checked_at: string
+}
+
+export interface RoleFileDraft {
+  contract: ServiceContract
+  file: RoleFile
+  notes: string[]
+}
+
+// Admin -> People "view as": what each service receives for one person.
+export interface PersonServiceAccess {
+  slug: string
+  name: string
+  is_active: boolean
+  roles: string[]
+  permissions: string[]
+  pv: string
+  contract: { status: ContractStatus; checked_at: string } | null
+}
+
+export interface PersonAccess {
+  user_id: string
+  can_sign_in: boolean
+  services: PersonServiceAccess[]
 }
 
 // ── admin: grants (enriched — docs/03-api-contract.md gives request/response

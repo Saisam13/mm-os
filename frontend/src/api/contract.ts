@@ -5,7 +5,7 @@ import type {
   AccountBulkResult, AccountCreateResult, AccountRosterRow,
   AdminEmployee, AdminGrant, AdminLlmRow, AdminService, AdminRole,
   AuditEntry, FunctionalAccount, Me, OnboardStatus, PeopleImportResult, PublicService, RoleFile,
-  RoleImportPlan, ServiceToken,
+  RoleImportPlan, ServiceToken, ServiceContract, RoleFileDraft, PersonAccess, PersonEmails,
   AdminAgent, AdminDepartment, CapabilityAssignment,
 } from './types'
 
@@ -57,6 +57,14 @@ export interface MmosApi {
     exportRoleFile(slug: string): Promise<RoleFile>
     importRoleFile(slug: string, file: RoleFile, opts: { dryRun: boolean; assignMode?: 'missing' | 'all' }): Promise<RoleImportPlan>
     rotateServiceKey(slug: string): Promise<string>
+
+    // access contract (docs/17-access-contract.md)
+    checkContracts(): Promise<ServiceContract[]>
+    checkContract(slug: string): Promise<ServiceContract>
+    roleFileFromService(slug: string): Promise<RoleFileDraft>
+    personAccess(userId: string): Promise<PersonAccess>
+    getPersonEmails(employeeId: string): Promise<PersonEmails>
+    setPersonEmails(employeeId: string, patch: { official?: string; personal?: string }): Promise<PersonEmails>
 
     listGrants(f: GrantFilter): Promise<AdminGrant[]>
     createGrant(payload: { user_id: string; slug: string; role: string; reason: string; expires_at?: string | null }): Promise<AdminGrant>

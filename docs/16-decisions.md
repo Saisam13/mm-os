@@ -9,6 +9,56 @@ break something non-obvious — routine choices belong in code comments.
 
 ---
 
+## D-2026-09-30-1 · Access contract: services declare, MM OS decides, services enforce
+
+**Context.** D-2026-09-25-1 put permissions on roles and into the token, but left each
+service free to read the claim, mirror it, or ignore it. In practice the permission list in
+MM OS and the one a service's code checks drifted (Item Code v2 kept its own table), a role
+with an empty list meant "whatever the service thinks this role is", and nobody could see from
+MM OS which services actually honoured what Admin → Roles said. Screens also varied: some hid
+what a person could not do, some showed it and failed on click.
+
+**Decision** (owner, 30 Sep 2026). The contract `mmos-access/1`, written up in
+[17-access-contract.md](17-access-contract.md):
+- **Services declare.** Each service publishes `GET /_mmos/manifest`: every permission key its
+  code checks, suggested roles (lowest first) and a `catalog_hash` over the sorted keys.
+- **MM OS decides.** Admin → Roles is the only place role → permission is edited; grants and the
+  people sheet the only places person → role is. Tokens carry `roles`, `permissions` and `pv`
+  (a 12-hex version of the permission list). Changing a role's permissions or a person's grant
+  revokes the affected sessions.
+- **Services enforce, on the server and in their screens.** Server checks are on permission
+  keys, never role names; the UI is driven by the same effective set.
+
+The four owner decisions from the design:
+1. **Fallback.** Effective permissions are the token's `permissions` when non-empty (unknown
+   keys dropped), else the union of the manifest's `suggested_roles` for the token's roles.
+2. **Record scope stays in the service** (a head's department, a rep's own leads, a Spoke
+   route). MM OS may supply inputs such as `dept`; the rule lives with the data.
+3. **Screens.** An everyday action a person may not take is shown disabled with the reason
+   ("Needs the <Role> role in <Service>. Ask IT to change your role in MM OS."), with one
+   page-level notice for view-only people; an admin/setup area they may not use is hidden,
+   with one line saying who manages it. The server check stays authoritative.
+4. **Local role editors** are read-only, labelled "Managed in MM OS", while MM OS is
+   configured. Standalone installs and break-glass password logins keep the local scheme.
+
+**Consequences.**
+- Admin → Services shows per service whether it follows the contract ("Follows MM OS",
+  "Permission list differs", "Uses its own roles", "Unreachable"), from a live manifest fetch
+  (`app/access_contract.py`, `GET /api/admin/services/contract`). It is a probe, not a record.
+- Admin → Roles → "Import from service" drafts a role file from the manifest and runs it
+  through the ordinary dry run; nothing is written until the admin applies it, and nobody's
+  grant changes.
+- A role on a service with a permission catalog must list at least one permission (API 422
+  `empty_permissions`; role files are rejected). An empty list would hand the decision back
+  to the service's fallback, which is exactly what the contract removes.
+- Admin → People "What they can do" shows each service's roles, permissions and `pv` for a
+  person, computed by the token handoff's own code, so it cannot disagree with a real token.
+- Record scope is deliberately not modelled in MM OS; do not add per-department permissions.
+- A service that has not shipped a manifest is not broken, only unverified: it keeps
+  deciding from role names until it does.
+
+---
+
 ## D-2026-09-25-2 · One account per person, first sign-in checks the employee code, and nobody lands with nothing
 
 **Context.** On 31 Aug MM OS accounts were meant to be shared functional mailboxes only. The

@@ -289,10 +289,12 @@ function RoleFileCard({ service, onApplied }: { service: AdminService; onApplied
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [done, setDone] = useState<string | null>(null)
+  const [notes, setNotes] = useState<string[] | null>(null)
+  const [importing, setImporting] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    setText(''); setPlan(null); setProblems([]); setErr(null); setDone(null); setCommitted(false)
+    setText(''); setPlan(null); setProblems([]); setErr(null); setDone(null); setCommitted(false); setNotes(null)
     mmosApi.admin.roleFileTemplate(service.slug)
       .then((t) => { setCommitted(t.committed); if (t.committed) setText(JSON.stringify(t.file, null, 2)) })
       .catch(() => {})
@@ -307,8 +309,8 @@ function RoleFileCard({ service, onApplied }: { service: AdminService; onApplied
     }
   }
 
-  async function run(dryRun: boolean) {
-    const file = parsed()
+  async function run(dryRun: boolean, given?: RoleFile) {
+    const file = given ?? parsed()
     if (!file) return
     setBusy(true); setErr(null); setProblems([]); setDone(null)
     try {
@@ -330,8 +332,24 @@ function RoleFileCard({ service, onApplied }: { service: AdminService; onApplied
     }
   }
 
+  // Access contract: start from what the service itself declares at /_mmos/manifest, then
+  // preview straight away. Nothing is written until the admin presses Apply.
+  async function importFromService() {
+    setImporting(true); setPlan(null); setProblems([]); setErr(null); setDone(null); setNotes(null)
+    try {
+      const draft = await mmosApi.admin.roleFileFromService(service.slug)
+      setText(JSON.stringify(draft.file, null, 2))
+      setNotes(draft.notes)
+      await run(true, draft.file)
+    } catch (e) {
+      setErr(e instanceof ApiRequestError ? e.message : `Could not read ${service.name}'s permission list.`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   async function loadFrom(source: 'export' | 'template') {
-    setPlan(null); setProblems([]); setDone(null)
+    setPlan(null); setProblems([]); setDone(null); setNotes(null)
     const file = source === 'export'
       ? await mmosApi.admin.exportRoleFile(service.slug)
       : (await mmosApi.admin.roleFileTemplate(service.slug)).file
@@ -350,7 +368,7 @@ function RoleFileCard({ service, onApplied }: { service: AdminService; onApplied
   function upload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
-    f.text().then((t) => { setText(t); setPlan(null); setProblems([]); setDone(null) })
+    f.text().then((t) => { setText(t); setPlan(null); setProblems([]); setDone(null); setNotes(null) })
     e.target.value = ''
   }
 
@@ -363,6 +381,10 @@ function RoleFileCard({ service, onApplied }: { service: AdminService; onApplied
         </div>
         <div className="row-actions">
           <input ref={fileInput} type="file" accept=".json,application/json" hidden onChange={upload} />
+          <button className="btn-q" onClick={importFromService} disabled={importing || busy}
+            title={`Build a draft from the permissions and roles ${service.name} declares, then preview it`}>
+            {importing ? 'Reading…' : 'Import from service'}
+          </button>
           <button className="btn-q" onClick={() => fileInput.current?.click()}>Upload file…</button>
           {committed ? <button className="btn-q" onClick={() => loadFrom('template')}>Load shipped file</button> : null}
           <button className="btn-q" onClick={() => loadFrom('export')}>Start from current roles</button>
@@ -395,6 +417,12 @@ function RoleFileCard({ service, onApplied }: { service: AdminService; onApplied
           <div className="form-err">
             <strong>The file has {problems.length} problem{problems.length === 1 ? '' : 's'}:</strong>
             <ul style={{ margin: '6px 0 0 18px' }}>{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+          </div>
+        ) : null}
+        {notes ? (
+          <div className="muted" style={{ fontSize: 12.5, margin: '0 0 12px' }}>
+            <strong>Drafted from {service.name}.</strong> Nobody's role changes; roles MM OS already has are kept.
+            {notes.length ? <ul style={{ margin: '4px 0 0 18px' }}>{notes.map((n) => <li key={n}>{n}</li>)}</ul> : null}
           </div>
         ) : null}
         {err ? <div className="form-err">{err}</div> : null}

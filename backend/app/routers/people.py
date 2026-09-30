@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session as OrmSession
 from .. import people_sheet
 from ..db import get_db
 from ..deps import audit, client_ip, current_user, has_capability, require_admin, require_capability
+from ..departments import clean_email, is_company_email
+from ..onboarding import PersonalEmail, personal_email_for
 from ..models import Department, Employee, Grant, Revocation, Service, ServiceRole, Session, User, UserCapability
 from ..provision import (
     FUNCTIONAL_JOB_TITLE,
@@ -360,6 +362,101 @@ def update_employee(employee_id: str, body: dict, request: Request, admin: User 
     audit(db, action="employee.update", actor_user_id=admin.id, target_type="employee", target_id=emp.id, fields=list(body))
     db.commit()
     return _employee_out(emp)
+
+
+# ── sign-in emails ───────────────────────────────────────────────────────────
+def _emails_out(db: OrmSession, emp: Employee) -> dict:
+    user = emp.user
+    personal = personal_email_for(db, user) if user else None
+    return {
+        "official": (user.login_email if user and user.login_email else emp.work_email),
+        "personal": personal.email if personal else None,
+        "personal_verified": bool(personal and personal.verified_at),
+    }
+
+
+@router.get("/employees/{employee_id}/emails")
+def get_employee_emails(employee_id: str, admin: User = Depends(require_capability("people.view")), db: OrmSession = Depends(get_db)):
+    return _emails_out(db, _get_or_404(db, Employee, employee_id, "employee_not_found"))
+
+
+@router.put("/employees/{employee_id}/emails")
+def set_employee_emails(employee_id: str, body: dict, request: Request, admin: User = Depends(require_capability("people.edit")), db: OrmSession = Depends(get_db)):
+    """Add or change the addresses a person can sign in with. `official` is the company
+    address (Google sign-in); `personal` is an optional Gmail that still needs the person to
+    type their employee code the first time. Send only the field being changed; an empty
+    string removes that address (removing `official` switches them to PIN sign-in)."""
+    emp = _get_or_404(db, Employee, employee_id, "employee_not_found")
+    user = emp.user
+    changed = []
+
+    def end_sessions():
+        now = datetime.now(timezone.utc)
+        for s in db.scalars(select(Session).where(Session.user_id == user.id, Session.revoked_at.is_(None))):
+            s.revoked_at = now
+
+    if "official" in body and not body["official"]:
+        # Remove the Google sign-in: the person falls back to their PIN.
+        if user and user.is_platform_admin:
+            raise HTTPException(409, {"error": "protected_admin", "message": "An IT Admin keeps their Google sign-in."})
+        if user and not user.pin_set_at:
+            raise HTTPException(409, {"error": "no_pin", "message": "Issue a PIN first, or they could not sign in at all."})
+        if user and user.login_email:
+            user.login_email, user.auth_type = None, "local_pin"
+            end_sessions()
+        emp.work_email = None
+        changed.append("official")
+    elif body.get("official"):
+        official, _, err = clean_email(body["official"])
+        if err or official is None:
+            raise HTTPException(422, {"error": "invalid_email", "message": f"Official email: {err}."})
+        if not is_company_email(official):
+            raise HTTPException(422, {"error": "not_company_email", "message": "The official email must be a company address."})
+        clash = db.scalar(select(Employee).where(func.lower(Employee.work_email) == official, Employee.id != emp.id))
+        uclash = db.scalar(select(User).where(func.lower(User.login_email) == official, User.employee_id != emp.id))
+        if clash or uclash or db.get(PersonalEmail, official):
+            raise HTTPException(409, {"error": "email_in_use", "message": "That address already belongs to another account."})
+        emp.work_email = official
+        if user:
+            if user.login_email and user.login_email.lower() != official:
+                end_sessions()
+            user.login_email, user.auth_type = official, "google"
+        changed.append("official")
+
+    if "personal" in body:
+        raw = body["personal"]
+        current = personal_email_for(db, user) if user else None
+        if raw in (None, ""):
+            if current:
+                db.delete(current); db.flush()
+                changed.append("personal")
+        else:
+            if user is None:
+                raise HTTPException(409, {"error": "no_account", "message": "This person has no MM OS account yet."})
+            personal, _, err = clean_email(raw)
+            if err or personal is None:
+                raise HTTPException(422, {"error": "invalid_email", "message": f"Personal email: {err}."})
+            other = db.get(PersonalEmail, personal)
+            owner = db.scalar(select(User).where(func.lower(User.login_email) == personal))
+            if (other and other.user_id != user.id) or (owner and owner.id != user.id):
+                raise HTTPException(409, {"error": "email_in_use", "message": "That address already belongs to another account."})
+            if current is None or current.email != personal:
+                if current:
+                    db.delete(current); db.flush()
+                db.add(PersonalEmail(email=personal, user_id=user.id))
+                changed.append("personal")
+
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, {"error": "email_in_use", "message": "That address already belongs to another account."})
+    if changed:
+        audit(db, action="employee.emails", actor_user_id=admin.id, target_type="employee",
+              target_id=emp.id, ip=client_ip(request), fields=changed)
+    db.commit()
+    db.refresh(emp)
+    return _emails_out(db, emp)
 
 
 @router.post("/employees/import")

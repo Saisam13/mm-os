@@ -13,6 +13,12 @@ contract nobody can implement in an afternoon gets bypassed.
 | 4 | Include `embed.js` in the page shell | the Back-to-MM-OS bar and app switcher |
 | 5 | Put every write endpoint under one guarded prefix | the dual-mode safety rule below |
 
+**Access.** What a person may do inside a service follows the access contract
+`mmos-access/1` — [17-access-contract.md](17-access-contract.md): the service declares its
+permissions at `GET /_mmos/manifest`, MM OS decides which role holds which and who holds each
+role, and the service enforces the token's permissions on the server and in its screens.
+Admin → Services shows whether a service does (D-2026-09-30-1).
+
 ## Python service (the ATT / Item Code Studio pattern)
 
 ```python
@@ -139,3 +145,4 @@ Step 4 is the payoff: access changes are data, not deployments.
 - [ ] OS bar renders and Back-to-MM-OS works
 - [ ] no mutating endpoint outside `/api/admin/*`
 - [ ] public path list is complete and minimal, public DB role is read-only
+- [ ] `/_mmos/manifest` is served and Admin → Services shows "Follows MM OS"

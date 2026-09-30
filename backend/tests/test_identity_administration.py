@@ -142,3 +142,31 @@ def test_bulk_preview_and_commit_use_same_validation(client, db, make_user, sign
     request["preview"] = False
     committed = client.post("/api/admin/grants/bulk", json=request)
     assert committed.json()["created"] == preview.json()["would_create"]
+
+
+def test_admin_adds_official_and_personal_email(client, db, make_user, sign_in):
+    admin_session(make_user, sign_in); dept = department(db)
+    body = payload(dept, work_email=None); body["auth_type"] = "local_pin"
+    emp = client.post("/api/admin/people", json=body).json()["employee"]
+    r = client.put(f"/api/admin/employees/{emp['id']}/emails",
+                   json={"official": "Someone@m-mines.com", "personal": "someone@gmail.com"})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"official": "someone@m-mines.com", "personal": "someone@gmail.com", "personal_verified": False}
+    assert client.get(f"/api/admin/employees/{emp['id']}/emails").json()["personal"] == "someone@gmail.com"
+    # a non-company address cannot be the official one, and clearing works
+    assert client.put(f"/api/admin/employees/{emp['id']}/emails", json={"official": "x@gmail.com"}).status_code == 422
+    assert client.put(f"/api/admin/employees/{emp['id']}/emails", json={"personal": ""}).json()["personal"] is None
+
+
+def test_admin_removes_official_email_only_when_a_pin_exists(client, db, make_user, sign_in):
+    admin_session(make_user, sign_in); dept = department(db)
+    emp = client.post("/api/admin/people", json=payload(dept)).json()
+    url = f"/api/admin/employees/{emp['employee']['id']}/emails"
+    assert client.put(url, json={"official": ""}).status_code == 409  # no PIN yet
+    from app.models import User
+    u = db.get(User, __import__("uuid").UUID(emp["user"]["id"]))
+    from datetime import datetime, timezone
+    u.pin_set_at = datetime.now(timezone.utc); db.commit()
+    assert client.put(url, json={"official": ""}).json()["official"] is None
+    db.refresh(u)
+    assert u.auth_type == "local_pin" and u.login_email is None

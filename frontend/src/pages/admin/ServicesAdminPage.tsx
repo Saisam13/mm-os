@@ -1,21 +1,46 @@
 import React, { useEffect, useState } from 'react'
-import { mmosApi } from '../../api'
-import type { AdminService, LaunchMode } from '../../api/types'
+import { mmosApi, ApiRequestError } from '../../api'
+import type { AdminService, LaunchMode, ServiceContract } from '../../api/types'
 import { Panel } from '../../components/Panel'
 import { EmptyState } from '../../components/EmptyState'
 import { rowActivation } from '../../lib/a11y'
 import { Link } from 'react-router-dom'
+import { ContractBadge, ContractDetail } from './contractStatus'
 
 export function ServicesAdminPage() {
   const [rows, setRows] = useState<AdminService[] | null>(null)
   const [selected, setSelected] = useState<AdminService | null>(null)
   const [creating, setCreating] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Access-contract check per service (docs/17-access-contract.md); asked on load, and again
+  // for one service with its Check button.
+  const [contracts, setContracts] = useState<Record<string, ServiceContract>>({})
+  const [checking, setChecking] = useState<Set<string>>(new Set())
+  const [checkingAll, setCheckingAll] = useState(false)
 
   function reload() {
     mmosApi.admin.listServices().then(setRows).catch(() => setLoadError('Could not load the service registry.'))
   }
+  function checkAll() {
+    setCheckingAll(true)
+    mmosApi.admin.checkContracts()
+      .then((all) => setContracts(Object.fromEntries(all.map((c) => [c.slug, c]))))
+      .catch(() => {})
+      .finally(() => setCheckingAll(false))
+  }
+  async function checkOne(slug: string) {
+    setChecking((s) => new Set(s).add(slug))
+    try {
+      const c = await mmosApi.admin.checkContract(slug)
+      setContracts((all) => ({ ...all, [slug]: c }))
+    } catch {
+      // leave the previous answer in place
+    } finally {
+      setChecking((s) => { const n = new Set(s); n.delete(slug); return n })
+    }
+  }
   useEffect(reload, [])
+  useEffect(checkAll, [])
 
   if (loadError) return <EmptyState title={loadError} />
 
@@ -23,7 +48,10 @@ export function ServicesAdminPage() {
     <>
       <div className="head">
         <h1>Services</h1>
-        <button className="btn-act" onClick={() => setCreating(true)}>Register service</button>
+        <div className="row-actions">
+          <button className="btn-q" onClick={checkAll} disabled={checkingAll}>{checkingAll ? 'Checking…' : 'Check all'}</button>
+          <button className="btn-act" onClick={() => setCreating(true)}>Register service</button>
+        </div>
       </div>
 
       <div className="card">
@@ -33,7 +61,7 @@ export function ServicesAdminPage() {
           ) : (
             <div className="tw">
               <table>
-                <thead><tr><th>Name</th><th>Category</th><th>Launch mode</th><th>Roles</th><th>Status</th></tr></thead>
+                <thead><tr><th>Name</th><th>Category</th><th>Launch mode</th><th>Roles</th><th>Access rules</th><th>Status</th></tr></thead>
                 <tbody>
                   {rows.map((s) => (
                     <tr key={s.id} className="clickable" onClick={() => setSelected(s)} {...rowActivation(() => setSelected(s))}>
@@ -41,6 +69,18 @@ export function ServicesAdminPage() {
                       <td className="tight">{s.category}</td>
                       <td className="tight cond">{s.launch_mode}</td>
                       <td className="tight num">{s.roles.length}</td>
+                      <td className="tight" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                        {checking.has(s.slug) || (checkingAll && !contracts[s.slug]) ? (
+                          <span className="muted">Checking…</span>
+                        ) : contracts[s.slug] ? (
+                          <ContractBadge status={contracts[s.slug].status} />
+                        ) : (
+                          <span className="muted">Not checked</span>
+                        )}
+                        {' '}
+                        <button className="btn-q" style={{ marginLeft: 6 }} onClick={() => checkOne(s.slug)} disabled={checking.has(s.slug)}
+                          aria-label={`Check whether ${s.name} follows MM OS`}>Check</button>
+                      </td>
                       <td className="tight"><span className={`chip${s.is_active ? ' pet' : ''}`}>{s.is_active ? 'active' : 'inactive'}</span></td>
                     </tr>
                   ))}
@@ -54,6 +94,7 @@ export function ServicesAdminPage() {
       {selected ? (
         <ServiceDrawer
           service={selected}
+          contract={contracts[selected.slug] ?? null}
           onClose={() => setSelected(null)}
           onChanged={(updated) => { setRows((r) => r?.map((x) => (x.id === updated.id ? updated : x)) ?? r); setSelected(updated) }}
         />
@@ -68,10 +109,12 @@ export function ServicesAdminPage() {
 
 function ServiceDrawer({
   service,
+  contract,
   onClose,
   onChanged,
 }: {
   service: AdminService
+  contract: ServiceContract | null
   onClose: () => void
   onChanged: (s: AdminService) => void
 }) {
@@ -81,6 +124,7 @@ function ServiceDrawer({
   const [roleName, setRoleName] = useState('')
   const [roleDesc, setRoleDesc] = useState('')
   const [addingRole, setAddingRole] = useState(false)
+  const [roleErr, setRoleErr] = useState<string | null>(null)
   const [key, setKey] = useState<string | null>(null)
   const [rotating, setRotating] = useState(false)
 
@@ -104,11 +148,13 @@ function ServiceDrawer({
 
   async function addRole() {
     if (!roleKey.trim() || !roleName.trim()) return
-    setAddingRole(true)
+    setAddingRole(true); setRoleErr(null)
     try {
       const role = await mmosApi.admin.addServiceRole(service.slug, { key: roleKey.trim(), name: roleName.trim(), description: roleDesc.trim() || undefined })
       onChanged({ ...service, roles: [...service.roles, role] })
       setRoleKey(''); setRoleName(''); setRoleDesc('')
+    } catch (e) {
+      setRoleErr(e instanceof ApiRequestError ? e.message : 'Could not add the role.')
     } finally {
       setAddingRole(false)
     }
@@ -175,6 +221,17 @@ function ServiceDrawer({
       </div>
       <button className="btn-act" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
 
+      <div className="eyebrow" style={{ margin: '22px 0 8px' }}>Access rules</div>
+      {contract ? (
+        <>
+          <ContractBadge status={contract.status} />
+          <ContractDetail c={contract} />
+          {contract.status === 'drift' ? (
+            <p style={{ margin: '4px 0 0' }}><Link to={`/admin/roles?service=${service.slug}`}>Import from service on Service roles →</Link></p>
+          ) : null}
+        </>
+      ) : <p className="muted" style={{ margin: 0 }}>Not checked yet. Use Check in the list.</p>}
+
       <div className="eyebrow" style={{ margin: '22px 0 8px' }}>Roles</div>
       <p style={{ margin: '0 0 10px' }}>
         <Link to={`/admin/roles?service=${service.slug}`}>Edit roles, permissions and import a role file →</Link>
@@ -197,6 +254,10 @@ function ServiceDrawer({
         <label htmlFor="r-desc">Meaning (shown wherever this role is granted)</label>
         <textarea id="r-desc" rows={2} value={roleDesc} onChange={(e) => setRoleDesc(e.target.value)} />
       </div>
+      {Object.keys(service.permission_catalog ?? {}).length ? (
+        <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>A role here must be allowed to do at least one thing, so add it on Service roles where you can tick its permissions.</p>
+      ) : null}
+      {roleErr ? <div className="form-err">{roleErr}</div> : null}
       <button className="btn-q" onClick={addRole} disabled={addingRole || !roleKey.trim() || !roleName.trim()}>Add role</button>
 
       <div className="eyebrow" style={{ margin: '22px 0 8px' }}>Service key</div>

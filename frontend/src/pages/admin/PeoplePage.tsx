@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { mmosApi } from '../../api'
-import type { AdminDepartment, AdminEmployee, AdminService } from '../../api/types'
+import type { AdminDepartment, AdminEmployee, AdminService, PersonAccess, PersonEmails } from '../../api/types'
 import { Panel } from '../../components/Panel'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { EmptyState } from '../../components/EmptyState'
@@ -8,6 +8,7 @@ import { formatDate } from '../../lib/format'
 import { rowActivation } from '../../lib/a11y'
 import { PeopleUploadDialog } from './PeopleUpload'
 import { useAuth } from '../../auth/AuthContext'
+import { ContractBadge } from './contractStatus'
 const STATUSES = ['active', 'suspended', 'exited']
 
 export function PeoplePage() {
@@ -108,6 +109,7 @@ export function PeoplePage() {
       {selected ? (
         <PersonDrawer
           employee={selected}
+          isAdmin={Boolean(me?.user.is_platform_admin)}
           departments={departments}
           onClose={() => setSelected(null)}
           onSaved={(updated) => {
@@ -123,11 +125,13 @@ export function PeoplePage() {
 
 function PersonDrawer({
   employee,
+  isAdmin,
   departments,
   onClose,
   onSaved,
 }: {
   employee: AdminEmployee
+  isAdmin: boolean
   departments: AdminDepartment[]
   onClose: () => void
   onSaved: (e: AdminEmployee) => void
@@ -247,6 +251,10 @@ function PersonDrawer({
         </>
       ) : null}
 
+      <EmailsSection employeeId={employee.id} onOfficialSaved={(email) => onSaved({ ...employee, work_email: email || null })} />
+
+      {isAdmin && employee.user_id ? <ViewAs userId={employee.user_id} /> : null}
+
       <div className="eyebrow" style={{ margin: '22px 0 8px' }}>Access</div>
       {employee.is_platform_admin ? (
         <span className="chip pet">Protected IT Admin · no normal deactivate action</span>
@@ -267,6 +275,113 @@ function PersonDrawer({
         />
       ) : null}
     </Panel>
+  )
+}
+
+// Sign-in emails: the company address (Google sign-in) and an optional personal Gmail that
+// still needs the person to type their employee code the first time.
+function EmailsSection({ employeeId, onOfficialSaved }: { employeeId: string; onOfficialSaved: (email: string) => void }) {
+  const [saved, setSaved] = useState<PersonEmails | null>(null)
+  const [official, setOfficial] = useState('')
+  const [personal, setPersonal] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    setSaved(null); setMsg(null)
+    mmosApi.admin.getPersonEmails(employeeId).then((e) => { setSaved(e); setOfficial(e.official ?? ''); setPersonal(e.personal ?? '') })
+      .catch(() => setMsg({ ok: false, text: 'Could not load their emails.' }))
+  }, [employeeId])
+
+  async function saveEmails() {
+    if (!saved) return
+    const patch: { official?: string; personal?: string } = {}
+    if (official.trim().toLowerCase() !== (saved.official ?? '')) patch.official = official.trim()
+    if (personal.trim().toLowerCase() !== (saved.personal ?? '')) patch.personal = personal.trim()
+    if (patch.official === undefined && patch.personal === undefined) { setMsg({ ok: true, text: 'Nothing to change.' }); return }
+    if (patch.official !== undefined && saved.official && patch.official !== '' && !window.confirm(`Change the Google sign-in from ${saved.official} to ${patch.official}? They are signed out everywhere.`)) return
+    if (patch.official === '' && !window.confirm('Remove the Google sign-in? They are signed out everywhere and can only use their PIN.')) return
+    setBusy(true); setMsg(null)
+    try {
+      const next = await mmosApi.admin.setPersonEmails(employeeId, patch)
+      setSaved(next); setOfficial(next.official ?? ''); setPersonal(next.personal ?? '')
+      if (patch.official !== undefined) onOfficialSaved(next.official ?? '')
+      setMsg({ ok: true, text: 'Emails saved.' })
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : 'Could not save emails.' })
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <>
+      <div className="eyebrow" style={{ margin: '22px 0 8px' }}>Sign-in emails</div>
+      {msg ? <div className={`chip${msg.ok ? ' pet' : ' wn'}`} style={{ marginBottom: 8 }} role="status">{msg.text}</div> : null}
+      <div className="field">
+        <label htmlFor="e-official">Official email (Google sign-in)</label>
+        <input id="e-official" type="email" value={official} onChange={(e) => setOfficial(e.target.value)} placeholder="name@m-mines.com" disabled={saved === null} />
+      </div>
+      <div className="field">
+        <label htmlFor="e-personal">Personal email (optional)</label>
+        <input id="e-personal" type="email" value={personal} onChange={(e) => setPersonal(e.target.value)} placeholder="name@gmail.com" disabled={saved === null} />
+        <div className="muted">
+          {saved?.personal ? (saved.personal_verified ? 'Confirmed by the person.' : 'Works after the person types their employee code once.') : 'Leave empty for none.'}
+        </div>
+      </div>
+      <div className="row-actions">
+        <button className="btn-q" onClick={saveEmails} disabled={busy || saved === null}>{busy ? 'Saving…' : 'Save emails'}</button>
+        <button className="btn-q btn-danger" onClick={() => setOfficial('')} disabled={busy || !official}>Remove official</button>
+        <button className="btn-q btn-danger" onClick={() => setPersonal('')} disabled={busy || !personal}>Remove personal</button>
+      </div>
+      <div className="muted" style={{ marginTop: 6 }}>Remove only empties the field; press Save emails to apply it.</div>
+    </>
+  )
+}
+
+// "View as": what each service receives for this person when they open it from MM OS,
+// computed by the same code as the token handoff (GET /api/admin/people/{id}/access).
+function ViewAs({ userId }: { userId: string }) {
+  const [data, setData] = useState<PersonAccess | null>(null)
+  const [err, setErr] = useState(false)
+  useEffect(() => {
+    setData(null); setErr(false)
+    mmosApi.admin.personAccess(userId).then(setData).catch(() => setErr(true))
+  }, [userId])
+
+  return (
+    <>
+      <div className="eyebrow" style={{ margin: '22px 0 8px' }}>What they can do</div>
+      {err ? <p className="muted" style={{ margin: 0 }}>Could not load their access.</p>
+        : data === null ? <p className="muted" style={{ margin: 0 }}>Loading…</p>
+        : data.services.length === 0 ? <p className="muted" style={{ margin: 0 }}>No access to any service.</p>
+        : (
+          <>
+            {!data.can_sign_in ? <p className="muted" style={{ margin: '0 0 6px' }}>They cannot sign in at the moment, so none of this reaches a service.</p> : null}
+            <div className="tw">
+              <table style={{ fontSize: 12.5 }}>
+                <thead><tr><th>Service</th><th>Role</th><th>Can do</th></tr></thead>
+                <tbody>
+                  {data.services.map((s) => (
+                    <tr key={s.slug}>
+                      <td style={{ whiteSpace: 'normal' }}>
+                        <strong>{s.name}</strong>{!s.is_active ? <span className="muted"> (switched off)</span> : null}
+                        <div style={{ marginTop: 4 }}>
+                          {s.contract ? <ContractBadge status={s.contract.status} /> : <span className="muted" title="Check it on Services">rules not checked</span>}
+                        </div>
+                      </td>
+                      <td className="cond" style={{ whiteSpace: 'normal' }}>{s.roles.join(', ')}</td>
+                      <td style={{ whiteSpace: 'normal' }}>
+                        {s.permissions.length ? <span className="cond">{s.permissions.join(', ')}</span>
+                          : <span className="muted">Nothing listed; the service goes by the role name</span>}
+                        <div className="muted cond" style={{ fontSize: 11 }} title="Permission version carried in the token">pv {s.pv}</div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+    </>
   )
 }
 
