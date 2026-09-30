@@ -16,13 +16,13 @@
     {
       "key": "editor",
       "name": "Editor",
-      "description": "Everything a viewer can do, plus accept anomalies, set budgets, owners, expected dates and PO aliases, and save layouts and report templates. Project Module guards every change with this one role, so an editor can also reach Settings.",
-      "permissions": ["view", "edit", "setup"]
+      "description": "Everything a viewer can do, plus accept anomalies, set budgets, owners, expected dates and PO aliases, and save layouts and report templates.",
+      "permissions": ["view", "edit"]
     },
     {
       "key": "admin",
       "name": "Administrator",
-      "description": "Everything an editor can do. Held by the people who own the data sources and email alerts.",
+      "description": "Everything an editor can do, plus Settings: data sources, workbook uploads and email alerts.",
       "permissions": ["view", "edit", "setup"]
     }
   ],
