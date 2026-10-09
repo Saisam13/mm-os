@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # service token. Empty = fall back to `issuer` (the original single-value behaviour).
     public_url: str = ""
     environment: str = "production"
-    version: str = "1.0.0"
+    version: str = "1.1.0"
 
     # ── database ──────────────────────────────────────────────────────────
     database_url: str = "postgresql+psycopg://mmos:mmos@localhost:5432/mmos"
@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     network_mode: str = "private"                 # private | public
     allowed_cidrs: str = "10.8.0.0/24,127.0.0.1/32"
     trusted_proxy_count: int = 1
+    trusted_proxy_cidrs: str = "127.0.0.1/32,::1/128"
 
     # ── Google Workspace OIDC ─────────────────────────────────────────────
     google_client_id: str = ""
@@ -45,10 +46,10 @@ class Settings(BaseSettings):
     # ── tokens ────────────────────────────────────────────────────────────
     signing_key_path: Path = Path("/run/secrets/mmos_signing_key.pem")
     signing_key_id: str = "mmos-2026-08"
-    service_token_ttl_seconds: int = 900          # 15 minutes
+    service_token_ttl_seconds: int = Field(default=900, gt=0, le=900)
     session_ttl_hours: int = 12
     session_max_days: int = 7
-    clock_skew_seconds: int = 60
+    clock_skew_seconds: int = Field(default=60, ge=0, le=60)
     revocation_poll_seconds: int = 60
 
     # ── cookies ───────────────────────────────────────────────────────────
@@ -70,6 +71,10 @@ class Settings(BaseSettings):
     @property
     def cidrs(self) -> list:
         return [ip_network(c.strip()) for c in self.allowed_cidrs.split(",") if c.strip()]
+
+    @property
+    def proxy_cidrs(self) -> list:
+        return [ip_network(c.strip()) for c in self.trusted_proxy_cidrs.split(",") if c.strip()]
 
     @property
     def redirect_uri(self) -> str:

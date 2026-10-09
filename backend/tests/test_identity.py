@@ -23,7 +23,7 @@ import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import jwt as jose_jwt
+import jwt as jose_jwt
 from sqlalchemy import select
 
 import app.routers.auth as auth_module
@@ -108,6 +108,11 @@ def _patch_google(monkeypatch, jwk: dict, id_token: str):
     monkeypatch.setattr(auth_module.httpx, "get", fake_get)
 
 
+def _login_nonce(client):
+    raw = client.cookies.get(auth_module.OAUTH_COOKIE_NAME).strip('"')
+    return auth_module._read_oauth_cookie(raw)["nonce"]
+
+
 def _start_google_login(client) -> str:
     """Hits /google/start, returns the `state` value Google would echo back. The oauth
     cookie it sets rides along on `client` automatically for the callback request."""
@@ -128,11 +133,20 @@ def _start_google_link(client) -> str:
     return qs["state"][0]
 
 
+def test_google_callback_rejects_token_from_another_login(client, monkeypatch, google_key):
+    pem, jwk = google_key
+    state = _start_google_login(client)
+    token = _id_token(pem, jwk["kid"], **_default_claims(nonce="another-login"))
+    _patch_google(monkeypatch, jwk, token)
+    response = client.get("/api/auth/google/callback", params={"code": "abc", "state": state})
+    assert response.status_code == 401 and response.json()["error"] == "invalid_nonce"
+
+
 # ── Google login ─────────────────────────────────────────────────────────────
 def test_google_callback_rejects_wrong_hd(client, monkeypatch, google_key, db):
     pem, jwk = google_key
     state = _start_google_login(client)
-    token = _id_token(pem, jwk["kid"], **_default_claims(hd="not-m-mines.com"))
+    token = _id_token(pem, jwk["kid"], **_default_claims(nonce=_login_nonce(client), hd="not-m-mines.com"))
     _patch_google(monkeypatch, jwk, token)
 
     resp = client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
@@ -147,7 +161,7 @@ def test_google_callback_unknown_company_email_goes_to_welcome_without_a_session
     # confirm an employee code first (tests/test_onboarding.py), and gets no session until then.
     pem, jwk = google_key
     state = _start_google_login(client)
-    token = _id_token(pem, jwk["kid"], **_default_claims(email="nobody@m-mines.com"))
+    token = _id_token(pem, jwk["kid"], **_default_claims(nonce=_login_nonce(client), email="nobody@m-mines.com"))
     _patch_google(monkeypatch, jwk, token)
 
     resp = client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
@@ -164,7 +178,7 @@ def test_google_callback_inactive_user_rejected(client, monkeypatch, google_key,
 
     pem, jwk = google_key
     state = _start_google_login(client)
-    token = _id_token(pem, jwk["kid"], **_default_claims(email=employee.work_email))
+    token = _id_token(pem, jwk["kid"], **_default_claims(nonce=_login_nonce(client), email=employee.work_email))
     _patch_google(monkeypatch, jwk, token)
 
     resp = client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
@@ -179,7 +193,7 @@ def test_google_callback_success_sets_session_and_audits(client, monkeypatch, go
 
     pem, jwk = google_key
     state = _start_google_login(client)
-    token = _id_token(pem, jwk["kid"], **_default_claims(email=employee.work_email))
+    token = _id_token(pem, jwk["kid"], **_default_claims(nonce=_login_nonce(client), email=employee.work_email))
     _patch_google(monkeypatch, jwk, token)
 
     resp = client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
@@ -205,7 +219,7 @@ def test_google_link_attaches_verified_email_and_keeps_pin_working(client, monke
     pem, jwk = google_key
     state = _start_google_link(client)
     # A personal gmail address links successfully — no hd restriction on this flow.
-    token = _id_token(pem, jwk["kid"], **_default_claims(email="personal.address@gmail.com", hd=None))
+    token = _id_token(pem, jwk["kid"], **_default_claims(nonce=_login_nonce(client), email="personal.address@gmail.com", hd=None))
     _patch_google(monkeypatch, jwk, token)
 
     resp = client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
@@ -233,7 +247,7 @@ def test_google_link_rejects_email_already_linked_to_another_user(client, monkey
 
     pem, jwk = google_key
     state = _start_google_link(client)
-    token = _id_token(pem, jwk["kid"], **_default_claims(email="claimed@gmail.com", hd=None))
+    token = _id_token(pem, jwk["kid"], **_default_claims(nonce=_login_nonce(client), email="claimed@gmail.com", hd=None))
     _patch_google(monkeypatch, jwk, token)
 
     resp = client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
@@ -254,7 +268,7 @@ def test_google_login_allows_linked_personal_gmail_regardless_of_hd(client, monk
 
     pem, jwk = google_key
     state = _start_google_login(client)
-    token = _id_token(pem, jwk["kid"], **_default_claims(email="linked.person@gmail.com", hd=None))
+    token = _id_token(pem, jwk["kid"], **_default_claims(nonce=_login_nonce(client), email="linked.person@gmail.com", hd=None))
     _patch_google(monkeypatch, jwk, token)
 
     resp = client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
@@ -267,7 +281,7 @@ def test_google_login_allows_linked_personal_gmail_regardless_of_hd(client, monk
 def test_google_login_rejects_unknown_gmail_address_via_hd_mismatch(client, monkeypatch, google_key, db):
     pem, jwk = google_key
     state = _start_google_login(client)
-    token = _id_token(pem, jwk["kid"], **_default_claims(email="total.stranger@gmail.com", hd=None))
+    token = _id_token(pem, jwk["kid"], **_default_claims(nonce=_login_nonce(client), email="total.stranger@gmail.com", hd=None))
     _patch_google(monkeypatch, jwk, token)
 
     resp = client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
@@ -348,6 +362,8 @@ def test_throttled_pin_attempt_does_not_count_toward_lockout(client, db, make_em
 
 
 def test_pin_throttle_is_scoped_per_ip_not_global(client, make_employee, make_user):
+    # This test runs through an explicitly trusted reverse proxy. Arbitrary peers cannot
+    # choose their rate-limit bucket by supplying X-Forwarded-For.
     attacker_employee = make_employee()
     make_user(employee=attacker_employee, auth_type="local_pin", pin="9999")
 

@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..mmos_seam import CurrentUser, get_current_user, require_role
+from ..mmos_seam import CurrentUser, get_current_user, require_permission
 from ..models import Proposal, Ticket
 from ..notifications import notify
 from ..org_chart import get_person
@@ -35,11 +35,13 @@ router = APIRouter(tags=["proposals"])
 @router.post("/tickets/{ticket_id}/proposals", response_model=ProposalOut, status_code=201)
 def create_proposal(
     ticket_id: UUID, body: ProposalCreate, db: Session = Depends(get_db),
-    user: CurrentUser = Depends(require_role("agent")),
+    user: CurrentUser = Depends(require_permission("proposal.write")),
 ):
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail={"error": "not_found"})
+    if not can_see_full(ticket, user):
+        raise HTTPException(403, {"error": "private_ticket"})
     if ticket.kind != "automation":
         raise HTTPException(status_code=409, detail={"error": "not_an_automation_request"})
     if ticket.status != "it_review":

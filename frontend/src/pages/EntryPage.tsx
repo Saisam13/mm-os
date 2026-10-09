@@ -23,7 +23,7 @@ export function EntryPage() {
     mmosApi.getPublicServices().then(setServices).catch(() => setServices(null))
   }, [])
 
-  if (!loading && me) return <Navigate to={me.user.needs_onboarding ? '/welcome' : '/services'} replace />
+  if (!loading && me) return <Navigate to={me.user.must_change_pin ? '/change-pin' : me.user.needs_onboarding ? '/welcome' : '/services'} replace />
 
   async function submitPin(e: React.FormEvent) {
     e.preventDefault()

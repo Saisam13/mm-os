@@ -69,15 +69,15 @@ See `.env.example`. Key ones:
 - `AUTH_MODE` — `stub` (dev/test) or `http` (production; requires `MMOS_SERVICE_KEY`).
 - `ENVIRONMENT` — set to `production` on a real deployment; combined with `AUTH_MODE=stub`
   this refuses to boot (see above).
-- `MMOS_SERVICE_SLUG` — `purchase`. Determines the session cookie name
-  (`purchase_mmos_at`) and the `{slug}` in MM OS's launch URL.
+- `MMOS_SERVICE_SLUG` — `passwordmanager`. Determines the session cookie name
+  (`passwordmanager_mmos_at`) and the `{slug}` in MM OS's launch URL.
 - `DEV_SECRET` — HMAC key for the stub token codec. Dev/test only, never used in `http` mode.
 
 ## Registering this service in MM OS (not done by this agent)
 
 This shell does not touch MM OS's seed data or spine. To actually launch it from MM OS:
 
-1. Register a service record with `slug=purchase`, its base URL (e.g.
+1. Register a service record with `slug=passwordmanager`, its base URL (e.g.
    `https://po.m-mines.in` or wherever it's deployed), and a service key —
    same shape as servicedesk's registration, see `docs/05-service-integration.md`.
 2. Add a launch tile in MM OS's app catalog pointing at that base URL.
@@ -86,6 +86,6 @@ This shell does not touch MM OS's seed data or spine. To actually launch it from
 
 ## Slug and launch URL
 
-- `slug`: `purchase`
-- Cookie: `purchase_mmos_at`
+- `slug`: `passwordmanager`
+- Cookie: `passwordmanager_mmos_at`
 - Local dev URL: `http://localhost:8020`

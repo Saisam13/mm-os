@@ -95,7 +95,7 @@ def get_real_mmos():
             issuer=cfg.mmos_issuer,
             version=cfg.version,
             cookie_name=COOKIE_NAME,
-            public_paths=["/healthz", "/api/badge", "/_mmos/info"],
+            public_paths=["/", "/assets", "/healthz", "/api/badge", "/_mmos/info"],
         )
     return _real_mmos
 
@@ -122,6 +122,9 @@ class CurrentUser:
     approval_level: str | None
     roles: list[str] = field(default_factory=list)
     platform_admin: bool = False
+    permissions: list[str] | None = None
+    policy_version: str | None = None
+    actor_type: str = "human"
 
 
 class AuthError(HTTPException):
@@ -226,6 +229,9 @@ def _claims_to_user(payload: dict) -> CurrentUser:
         approval_level=payload.get("approval_level"),
         roles=list(payload.get("roles", [])),
         platform_admin=bool(payload.get("platform_admin", False)),
+        permissions=list(payload["permissions"]) if "permissions" in payload else None,
+        policy_version=payload.get("pv"),
+        actor_type="service" if payload.get("actor_type") == "service" else "human",
     )
 
 
@@ -249,8 +255,42 @@ def _extract_token(request: Request) -> str:
 
 
 def get_current_user(request: Request) -> CurrentUser:
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.cookies.get(COOKIE_NAME) and not request.headers.get("authorization"):
+        if request.headers.get("origin") != str(request.base_url).rstrip("/"):
+            raise HTTPException(403, {"error": "origin_denied"})
     token = _extract_token(request)
-    return verify_token(token)
+    user = verify_token(token)
+    request.state.activity_actor = user
+    if not allows(user, "ticket.view"):
+        raise HTTPException(403, {"error": "permission_required", "need": "ticket.view"})
+    return user
+
+
+LEGACY_BUNDLES = {
+    "requester": {"ticket.view", "ticket.create", "ticket.approve"},
+    "agent": {"ticket.view", "ticket.create", "ticket.approve", "queue.read", "ticket.assign", "proposal.write", "ticket.transition", "comment.internal"},
+    "admin": {"ticket.view", "ticket.create", "ticket.approve", "queue.read", "ticket.assign", "proposal.write", "ticket.transition", "comment.internal", "ticket.private_oversight", "service.admin"},
+}
+
+
+def allows(user: CurrentUser, permission: str) -> bool:
+    if user.permissions is not None:
+        return permission in user.permissions
+    # Old role-only fixtures are a development aid; production contracts require
+    # explicit permissions. An explicit empty list never falls back to a role.
+    return settings().auth_mode == "stub" and any(permission in LEGACY_BUNDLES.get(r, set()) for r in user.roles)
+
+
+def require_permission(permission: str):
+    def dependency(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        if not allows(user, permission):
+            raise HTTPException(403, {"error": "permission_required", "need": permission})
+        if settings().auth_mode == "http" and permission in {"service.admin", "ticket.approve", "ticket.assign", "proposal.write", "ticket.transition"}:
+            age = get_real_mmos().authority_age_seconds
+            if age is None or not 0 <= age <= 300:
+                raise HTTPException(503, {"error": "authority_stale", "message": "This action requires a recent MMOS permission check."})
+        return user
+    return dependency
 
 
 def require_role(role: str):
@@ -260,10 +300,15 @@ def require_role(role: str):
     who needs Service Desk's "admin" role is granted it like anyone else."""
 
     def _dep(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        if role not in user.roles:
+        permission = "service.admin" if role == "admin" else "queue.read" if role == "agent" else "ticket.view"
+        if not allows(user, permission):
             raise HTTPException(
                 status_code=403,
                 detail={"error": "role_required", "need": role, "have": user.roles},
             )
+        if permission == "service.admin" and settings().auth_mode == "http":
+            age = get_real_mmos().authority_age_seconds
+            if age is None or not 0 <= age <= 300:
+                raise HTTPException(503, {"error": "authority_stale"})
         return user
     return _dep

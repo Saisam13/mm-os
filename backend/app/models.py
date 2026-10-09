@@ -269,6 +269,7 @@ class Session(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     token_hash: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    auth_method: Mapped[str] = mapped_column(String(16), default="legacy", server_default="legacy", nullable=False)
     ip: Mapped[str | None] = mapped_column(String(64))
     user_agent: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _now()
@@ -377,6 +378,33 @@ class RateLimit(Base):
 
 
 # ── audit ─────────────────────────────────────────────────────────────────
+class ServiceActivity(Base):
+    """Immutable service-reported business events; identities survive account deletion."""
+    __tablename__ = "service_activity"
+    id: Mapped[uuid.UUID] = _pk()
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    source_service_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    service_slug: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(180), nullable=False)
+    actor_name: Mapped[str | None] = mapped_column(String(180))
+    actor_code: Mapped[str | None] = mapped_column(String(32))
+    department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    action: Mapped[str] = mapped_column(String(96), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    restricted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = _now()
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("source_service_id", "event_id", name="uq_service_activity_event"),
+        Index("ix_service_activity_time", "occurred_at", "id"),
+        Index("ix_service_activity_actor", "actor_subject", "occurred_at"),
+    )
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

@@ -163,7 +163,11 @@ def test_patch_sets_and_clears_approval_level(db, client, make_user, sign_in):
     assert r.json()["approval_level"] == "L3 (HOD)"
 
     # An absent key never clobbers it.
+    from app.models import Department
+    db.add(Department(key="hr-ops", name="HR Ops"))
+    db.commit()
     r = client.patch(f"/api/admin/accounts/{account_id}", json={"department": "HR Ops"})
+    assert r.status_code == 200, r.text
     assert r.json()["approval_level"] == "L3 (HOD)"
     assert r.json()["department"] == "HR Ops"
 

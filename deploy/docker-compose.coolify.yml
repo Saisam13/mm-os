@@ -43,7 +43,7 @@ services:
       MMOS_DATABASE_URL: postgresql+psycopg://mmos:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the Coolify environment}@postgres:5432/mmos
       MMOS_NETWORK_MODE: "public"
       MMOS_SIGNING_KEY_PATH: /data/mmos_signing_key.pem
-      MMOS_SEED_ON_BOOT: "true"
+      MMOS_SEED_ON_BOOT: "false"
       MMOS_ENVIRONMENT: "demo"
       MMOS_COOKIE_SECURE: "${MMOS_COOKIE_SECURE:-false}"
       MMOS_COOKIE_DOMAIN: "${MMOS_COOKIE_DOMAIN:-}"
@@ -70,7 +70,7 @@ services:
         # is shared across all workers/replicas via the `rate_limits` table in Postgres
         # (app/ratelimit.py). Left at uvicorn's default (1 worker); raising --workers or adding
         # replicas is no longer forbidden. See docs/10-runbook.md §16.
-        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers
     expose:
       - "8000"
     healthcheck:

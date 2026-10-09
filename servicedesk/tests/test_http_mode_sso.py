@@ -58,6 +58,7 @@ if str(_CLIENT_PKG) not in sys.path:
 _KEY_PATH = Path(tempfile.gettempdir()) / "mmos-int1" / f"int1_signing_key_{os.getpid()}.pem"
 _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MMOS_SIGNING_KEY_ID", "mmos-int1-test")
+os.environ["MMOS_ENVIRONMENT"] = "test"
 os.environ["MMOS_SIGNING_KEY_PATH"] = str(_KEY_PATH)
 os.environ.setdefault("MMOS_ISSUER", "https://os.int1.test")
 
@@ -95,6 +96,7 @@ def _mint(service_slug: str = SLUG, roles=("requester",)):
     user = SimpleNamespace(id="int1-user-0001", is_platform_admin=False)
     employee = SimpleNamespace(
         employee_code="MM88",
+        job_title=None,
         work_email=None,
         full_name="MAMATESH UDAY NAIK",
         hr_department="Projects",
@@ -103,7 +105,8 @@ def _mint(service_slug: str = SLUG, roles=("requester",)):
         approval_level="L1 (Associate)",
     )
     token, jti, _ttl = backend_security.mint_service_token(
-        user=user, employee=employee, service_slug=service_slug, roles=list(roles)
+        user=user, employee=employee, service_slug=service_slug, roles=list(roles),
+        permissions=sorted(set().union(*(mmos_seam.LEGACY_BUNDLES.get(r, set()) for r in roles)))
     )
     return token, jti
 
@@ -111,7 +114,7 @@ def _mint(service_slug: str = SLUG, roles=("requester",)):
 def _raw_encode(claims: dict, *, kid: str | None = None) -> str:
     """Sign arbitrary claims with the SAME private key the mint path uses, for the negative
     cases (expired / wrong-audience) that mint_service_token would not itself produce."""
-    from jose import jwt
+    import jwt
 
     return jwt.encode(
         claims,
@@ -138,6 +141,7 @@ def _base_claims(**overrides) -> dict:
         "band": "L2",
         "approval_level": "L1 (Associate)",
         "roles": ["requester"],
+        "permissions": ["ticket.view", "ticket.create", "ticket.approve"],
         "platform_admin": False,
     }
     claims.update(overrides)
@@ -209,7 +213,7 @@ def http_sso(monkeypatch):
     # Desk runs behind TLS in production), so an http TestClient would silently drop it from
     # its jar and never send it back. Speaking https to the ASGI app is the faithful mirror of
     # the real deployment and lets the cookie round-trip be proven honestly.
-    client = TestClient(app, base_url="https://testserver")
+    client = TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"})
     try:
         yield SimpleNamespace(client=client, mmos=mmos, revocations=revocations)
     finally:
@@ -292,7 +296,7 @@ def test_wrong_signing_key_rejected(http_sso):
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode()
-    from jose import jwt
+    import jwt
 
     forged = jwt.encode(
         _base_claims(), rogue_pem, algorithm="RS256", headers={"kid": backend_cfg.signing_key_id}

@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     # MM OS integration (docs/05-service-integration.md).
     mmos_os_url: str = "https://m-mines.in"
-    mmos_service_slug: str = "purchase"
+    mmos_service_slug: str = "passwordmanager"
     mmos_service_key: str = ""
     mmos_issuer: str = "https://m-mines.in"
 

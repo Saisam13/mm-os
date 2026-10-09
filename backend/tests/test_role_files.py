@@ -1,7 +1,7 @@
 """Role files (app/roles_io.py) and the role admin endpoints around them."""
 from __future__ import annotations
 
-from jose import jwt
+import jwt
 from sqlalchemy import select
 
 from app import models
@@ -160,7 +160,7 @@ def test_service_token_carries_permissions(client, db, make_user, sign_in, make_
     client.post("/api/admin/services/itemcode/roles/import?dry_run=false", json=committed("itemcode"))
     r = client.post("/api/token/service", json={"slug": "itemcode"})
     assert r.status_code == 200, r.text
-    claims = jwt.get_unverified_claims(r.json()["access_token"])
+    claims = jwt.decode(r.json()["access_token"], options={'verify_signature': False})
     assert claims["roles"] == ["admin"]
     assert "admin" in claims["permissions"]
 

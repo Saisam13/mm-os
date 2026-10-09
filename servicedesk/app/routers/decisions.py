@@ -19,12 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..mmos_seam import CurrentUser, get_current_user
+from ..mmos_seam import CurrentUser, get_current_user, require_permission
 from ..models import Decision, Proposal, Ticket
 from ..notifications import notify
 from ..org_chart import get_person
 from ..schemas import DecisionCreate, DecisionOut
 from ..state_machine import apply_transition
+from ..privacy import can_see_full
 
 router = APIRouter(tags=["decisions"])
 
@@ -32,15 +33,19 @@ router = APIRouter(tags=["decisions"])
 @router.post("/tickets/{ticket_id}/decisions", response_model=DecisionOut, status_code=201)
 def decide(
     ticket_id: UUID, body: DecisionCreate, db: Session = Depends(get_db),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_permission("ticket.approve")),
 ):
-    ticket = db.get(Ticket, ticket_id)
+    ticket = db.scalar(select(Ticket).where(Ticket.id == ticket_id).with_for_update().execution_options(populate_existing=True))
     if ticket is None:
         raise HTTPException(status_code=404, detail={"error": "not_found"})
     if ticket.status != "manager_review":
         from ..state_machine import invalid_transition
         raise invalid_transition(ticket.status, body.decision)
-    if ticket.approver_sub != user.sub:
+    policy = ticket.approval_policy or {"mode": "sequence", "approvers": [{"sub": ticket.approver_sub}]}
+    eligible = [a["sub"] for a in policy["approvers"] if a.get("sub") and a["sub"] != ticket.requester_sub]
+    prior = list(ticket.approved_by or [])
+    authorized = user.sub in eligible if policy["mode"] == "any_of" else ticket.approver_sub == user.sub
+    if not authorized or user.sub in prior:
         raise HTTPException(status_code=403, detail={"error": "not_the_approver"})
     if user.sub == ticket.requester_sub:
         # Defensive — see module docstring. compute_approver() should never have produced
@@ -72,7 +77,22 @@ def decide(
     )
     db.add(decision)
 
-    apply_transition(db, ticket, body.decision, actor_sub=user.sub, detail={"decision": body.decision})
+    if body.decision == "approved" and policy["mode"] == "sequence":
+        prior.append(user.sub)
+        ticket.approved_by = prior
+        remaining = [sub for sub in eligible if sub not in prior]
+        if remaining:
+            from ..models import Event
+            ticket.approver_sub = remaining[0]
+            db.add(Event(ticket_id=ticket.id, actor_sub=user.sub, from_status=ticket.status,
+                         to_status=ticket.status, detail={"approval_step": len(prior), "next_approver": remaining[0]}))
+        else:
+            apply_transition(db, ticket, body.decision, actor_sub=user.sub, detail={"decision": body.decision})
+    else:
+        if body.decision == "changes_requested":
+            ticket.approved_by = []
+            ticket.approver_sub = eligible[0] if eligible else None
+        apply_transition(db, ticket, body.decision, actor_sub=user.sub, detail={"decision": body.decision})
 
     db.commit()
     db.refresh(decision)
@@ -85,5 +105,10 @@ def decide(
 
 
 @router.get("/tickets/{ticket_id}/decisions", response_model=list[DecisionOut])
-def list_decisions(ticket_id: UUID, db: Session = Depends(get_db)):
+def list_decisions(ticket_id: UUID, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(404, {"error": "not_found"})
+    if not can_see_full(ticket, user):
+        raise HTTPException(403, {"error": "private_ticket"})
     return db.scalars(select(Decision).where(Decision.ticket_id == ticket_id)).all()

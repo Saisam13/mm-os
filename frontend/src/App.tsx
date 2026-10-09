@@ -4,6 +4,7 @@ import { AuthProvider } from './auth/AuthContext'
 import { ProtectedLayout, AdminGuard } from './routes/Guards'
 import { EntryPage } from './pages/EntryPage'
 import { WelcomePage } from './pages/WelcomePage'
+import { ChangePinPage } from './pages/ChangePinPage'
 import { Dashboard } from './pages/Dashboard'
 import { ServicesPage } from './pages/ServicesPage'
 import { ServiceOpenPage } from './pages/ServiceOpenPage'
@@ -14,6 +15,7 @@ import { AccountsPage } from './pages/admin/AccountsPage'
 import { AccessPage } from './pages/admin/AccessPage'
 import { ServicesAdminPage } from './pages/admin/ServicesAdminPage'
 import { AuditPage } from './pages/admin/AuditPage'
+import { ActivityPage } from './pages/admin/ActivityPage'
 import { RolesPage } from './pages/admin/RolesPage'
 import { LlmPage } from './pages/admin/LlmPage'
 import { AgentsPage } from './pages/admin/AgentsPage'
@@ -27,6 +29,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<EntryPage />} />
           <Route path="/welcome" element={<WelcomePage />} />
+          <Route path="/change-pin" element={<ChangePinPage />} />
 
           <Route element={<ProtectedLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
@@ -47,6 +50,7 @@ export function App() {
                 <Route path="services" element={<ServicesAdminPage />} />
                 <Route path="roles" element={<RolesPage />} />
                 <Route path="audit" element={<AuditPage />} />
+                <Route path="activity" element={<ActivityPage />} />
               </Route>
             </Route>
           </Route>

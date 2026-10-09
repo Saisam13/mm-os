@@ -1,0 +1,64 @@
+{
+  "format": "mmos-roles/1",
+  "service": "servicedesk",
+  "permissions": {
+    "ticket.view": "Read tickets within object visibility rules",
+    "ticket.create": "Create requests",
+    "ticket.approve": "Decide only assigned eligible requests; no self approval",
+    "queue.read": "Read agent queue; private object visibility still applies",
+    "ticket.assign": "Assign visible tickets",
+    "proposal.write": "Create proposals on visible tickets",
+    "ticket.transition": "Perform agent workflow transitions on visible tickets",
+    "comment.internal": "Write and read internal comments on visible tickets",
+    "ticket.private_oversight": "Read private tickets as explicit Service Desk oversight",
+    "service.admin": "Configure Service Desk"
+  },
+  "roles": [
+    {
+      "key": "requester",
+      "name": "Requester",
+      "description": "Explicit Service Desk permissions with independent object checks",
+      "permissions": [
+        "ticket.view",
+        "ticket.create",
+        "ticket.approve"
+      ],
+      "default": true
+    },
+    {
+      "key": "agent",
+      "name": "Agent",
+      "description": "Explicit Service Desk permissions with independent object checks",
+      "permissions": [
+        "ticket.view",
+        "ticket.create",
+        "ticket.approve",
+        "queue.read",
+        "ticket.assign",
+        "proposal.write",
+        "ticket.transition",
+        "comment.internal"
+      ],
+      "default": false
+    },
+    {
+      "key": "admin",
+      "name": "Admin",
+      "description": "Explicit Service Desk permissions with independent object checks",
+      "permissions": [
+        "ticket.view",
+        "ticket.create",
+        "ticket.approve",
+        "queue.read",
+        "ticket.assign",
+        "proposal.write",
+        "ticket.transition",
+        "comment.internal",
+        "ticket.private_oversight",
+        "service.admin"
+      ],
+      "default": false
+    }
+  ],
+  "remove_unlisted": false
+}

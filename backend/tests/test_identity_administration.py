@@ -1,5 +1,5 @@
 """Acceptance coverage for the identity and access administration rebuild."""
-from jose import jwt
+import jwt
 from sqlalchemy import select
 
 from app.models import (
@@ -84,8 +84,12 @@ def test_create_person_multiple_services_and_roles_is_atomic(client, db, make_us
     person = db.scalar(select(Employee).where(Employee.employee_code == "MM900"))
     assert len(db.scalars(select(Grant).where(Grant.user_id == person.user.id)).all()) == 3
     sign_in(person.user)
-    token = client.post("/api/token/service", json={"slug": one.slug}).json()["access_token"]
-    assert set(jwt.get_unverified_claims(token)["roles"]) == {"viewer", "editor"}
+    setup = client.post("/api/auth/onboard", json={"employee_code": "MM900", "pin": "827461"})
+    assert setup.status_code == 200, setup.text
+    response = client.post("/api/token/service", json={"slug": one.slug})
+    assert response.status_code == 200, response.text
+    token = response.json()["access_token"]
+    assert set(jwt.decode(token, options={'verify_signature': False})["roles"]) == {"viewer", "editor"}
 
 
 def test_invalid_service_role_rolls_back_entire_person(client, db, make_user, sign_in, make_service):

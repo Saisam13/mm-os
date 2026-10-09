@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import settings  # noqa: E402
 from app.models import Base  # noqa: E402
+from app import activity  # noqa: F401,E402 — register outbox metadata for schema comparison
 
 config = context.config
 if config.config_file_name is not None:

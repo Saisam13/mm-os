@@ -454,10 +454,7 @@ def seed_platform_admin(db: OrmSession) -> str:
     """Idempotent. Returns a one-line status string."""
     user = db.scalar(select(User).where(User.login_email == PLATFORM_ADMIN_EMAIL))
     if user is not None:
-        if not user.is_platform_admin:
-            user.is_platform_admin = True
-            return f"{PLATFORM_ADMIN_EMAIL}: promoted existing user to platform admin"
-        return f"{PLATFORM_ADMIN_EMAIL}: already a platform admin"
+        return f"{PLATFORM_ADMIN_EMAIL}: existing authority preserved"
 
     emp = db.scalar(select(Employee).where(Employee.work_email == PLATFORM_ADMIN_EMAIL))
     if emp is None:
@@ -483,25 +480,11 @@ def seed_platform_admin(db: OrmSession) -> str:
 
 
 def grant_admin_all_services(db: OrmSession) -> list[str]:
-    """Give the platform admin an 'admin' (or first-defined) role on every service that
-    exists but where they have no grant yet. Idempotent."""
-    admin_user = db.scalar(select(User).where(User.login_email == PLATFORM_ADMIN_EMAIL))
-    if admin_user is None:
-        return []
-    existing_svc_ids = {g.service_id for g in db.scalars(select(Grant).where(Grant.user_id == admin_user.id))}
-    granted = []
-    for svc in db.scalars(select(Service)):
-        if svc.id in existing_svc_ids:
-            continue
-        role = db.scalar(select(ServiceRole).where(
-            ServiceRole.service_id == svc.id, ServiceRole.key == "admin"
-        )) or db.scalar(select(ServiceRole).where(ServiceRole.service_id == svc.id))
-        if role is None:
-            continue
-        db.add(Grant(user_id=admin_user.id, service_id=svc.id, service_role_id=role.id,
-                     granted_by=admin_user.id, reason="boot: platform admin"))
-        granted.append(svc.slug)
-    return granted
+    """Routine seeding never assigns service authority or restores revoked access.
+
+    Retained as a compatibility entry point; assignments require the audited grant API.
+    """
+    return []
 
 
 # ── demo batch (batched access rollout) ─────────────────────────────────────────────────
@@ -786,6 +769,9 @@ def apply_demo_logins_and_grants(
     of service access so the shell (and the admin's Access page) shows real tiles instead
     of an empty list, and hand back what to print. Never deletes anything -- grants are
     additive and idempotent (see `_ensure_grant`)."""
+    from .config import settings
+    if settings().environment == "production":
+        raise RuntimeError("Demo credentials and grants are forbidden in production.")
     seed_services(db)
     db.flush()
 

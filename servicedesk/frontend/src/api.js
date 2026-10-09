@@ -2,15 +2,19 @@
 // handoff (packages/mmos-client-py + embed.js) exists — see `## Assumptions` in the handoff
 // and DevSignIn.jsx, which is the stand-in for "click a tile in MM OS and arrive signed in."
 const TOKEN_KEY = "sd_token";
+let devToken = null;
+// Retire tokens left by the old production handoff. Production uses HttpOnly cookies.
+localStorage.removeItem(TOKEN_KEY);
 
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return devToken;
 }
 export function setToken(token) {
-  localStorage.setItem(TOKEN_KEY, token);
+  devToken = token;
 }
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  devToken = null;
 }
 
 // Peeks at the claims of either a real three-part RS256 JWT or this repo's two-part stub
@@ -32,6 +36,7 @@ async function request(path, { method = "GET", body, params } = {}) {
   const token = getToken();
   const res = await fetch(url, {
     method,
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -50,6 +55,8 @@ async function request(path, { method = "GET", body, params } = {}) {
 }
 
 export const api = {
+  session: () => request("/_mmos/me"),
+  logout: () => request("/_mmos/logout", { method: "POST" }),
   listMine: () => request("/api/tickets/mine"),
   listDepartment: () => request("/api/tickets/department"),
   listQueue: () => request("/api/tickets/queue"),

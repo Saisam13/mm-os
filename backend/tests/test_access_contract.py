@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
-from jose import jwt
+import jwt
 from sqlalchemy import select
 
 from app import access_contract, models
@@ -238,7 +238,7 @@ def test_service_token_carries_pv(client, db, make_user, sign_in, make_service, 
     sign_in(user)
     r = client.post("/api/token/service", json={"slug": "po-pv"})
     assert r.status_code == 200, r.text
-    claims = jwt.get_unverified_claims(r.json()["access_token"])
+    claims = jwt.decode(r.json()["access_token"], options={'verify_signature': False})
     assert claims["permissions"] == ["edit", "view"]
     assert claims["pv"] == hashlib.sha256(b'["edit","view"]').hexdigest()[:12]
 
@@ -248,7 +248,7 @@ def test_pv_for_a_role_without_permissions(client, make_user, sign_in, make_serv
     user = make_user()
     make_grant(user, service, made["viewer"])
     sign_in(user)
-    claims = jwt.get_unverified_claims(client.post("/api/token/service", json={"slug": "po-pv0"}).json()["access_token"])
+    claims = jwt.decode(client.post("/api/token/service", json={"slug": "po-pv0"}).json()["access_token"], options={'verify_signature': False})
     assert claims["permissions"] == [] and claims["pv"] == permissions_version([])
 
 
@@ -321,7 +321,7 @@ def test_view_as_matches_the_token(client, db, make_user, sign_in, make_service,
 
     # ... and it is exactly what the service would receive.
     sign_in(person)
-    claims = jwt.get_unverified_claims(client.post("/api/token/service", json={"slug": "po-va"}).json()["access_token"])
+    claims = jwt.decode(client.post("/api/token/service", json={"slug": "po-va"}).json()["access_token"], options={'verify_signature': False})
     assert (claims["roles"], claims["permissions"], claims["pv"]) == (
         rows["po-va"]["roles"], rows["po-va"]["permissions"], rows["po-va"]["pv"])
     # view-as minted nothing: the only token.issue is the one just above

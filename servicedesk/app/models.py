@@ -48,6 +48,7 @@ class Ticket(Base):
 
     requester_sub: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     requester_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    requester_name: Mapped[str | None] = mapped_column(String(180))
     requester_dept: Mapped[str] = mapped_column(Text, nullable=False)
 
     service_slug: Mapped[str | None] = mapped_column(Text)
@@ -57,6 +58,8 @@ class Ticket(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     assignee_sub: Mapped[str | None] = mapped_column(Text)
     approver_sub: Mapped[str | None] = mapped_column(Text)  # computed at submit time
+    approval_policy: Mapped[dict | None] = mapped_column(JSON)
+    approved_by: Mapped[list | None] = mapped_column(JSON)
 
     created_at: Mapped[datetime] = _now()
     updated_at: Mapped[datetime] = mapped_column(
@@ -85,6 +88,8 @@ class Proposal(Base):
         Uuid(as_uuid=True), ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False
     )
     author_sub: Mapped[str] = mapped_column(Text, nullable=False)
+    author_name: Mapped[str | None] = mapped_column(String(180))
+    author_code: Mapped[str | None] = mapped_column(String(32))
     scope_summary: Mapped[str] = mapped_column(Text, nullable=False)
     effort_days: Mapped[float | None] = mapped_column(Numeric(5, 1))
     resources: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -110,6 +115,7 @@ class Decision(Base):
     )
     approver_sub: Mapped[str] = mapped_column(Text, nullable=False)
     approver_code: Mapped[str] = mapped_column(Text, nullable=False)
+    approver_name: Mapped[str | None] = mapped_column(String(180))
     decision: Mapped[str] = mapped_column(String(24), nullable=False)
     comment: Mapped[str | None] = mapped_column(Text)
     snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)  # immutable copy, see app/state_machine.py
@@ -128,6 +134,8 @@ class Comment(Base):
         Uuid(as_uuid=True), ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False
     )
     author_sub: Mapped[str] = mapped_column(Text, nullable=False)
+    author_name: Mapped[str | None] = mapped_column(String(180))
+    author_code: Mapped[str | None] = mapped_column(String(32))
     body: Mapped[str] = mapped_column(Text, nullable=False)
     is_internal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = _now()
@@ -146,6 +154,8 @@ class Event(Base):
         Uuid(as_uuid=True), ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False
     )
     actor_sub: Mapped[str | None] = mapped_column(Text)
+    actor_name: Mapped[str | None] = mapped_column(String(180))
+    actor_code: Mapped[str | None] = mapped_column(String(32))
     from_status: Mapped[str | None] = mapped_column(Text)
     to_status: Mapped[str | None] = mapped_column(Text)
     detail: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

@@ -164,7 +164,7 @@ def test_seed_demo_batch_gives_exactly_five_usable_pins(db, tmp_path):
         assert not verify_pin(DEMO_PIN, u.pin_hash)  # never the guessable demo PIN
 
 
-def test_seed_demo_batch_platform_admin_satisfies_no_pin_admins_and_pin_login_works(db, client, tmp_path):
+def test_seed_demo_admin_cannot_use_pin_login(db, client, tmp_path):
     path = _write_synthetic_sheet(tmp_path, _synthetic_org_rows())
     seed_demo_batch(db, path)
 
@@ -180,11 +180,10 @@ def test_seed_demo_batch_platform_admin_satisfies_no_pin_admins_and_pin_login_wo
     assert admin_user.pin_set_at is not None
     assert verify_pin(DEMO_PIN, admin_user.pin_hash)
 
-    # And the real PIN-login route accepts it -- auth.py keys off pin_hash presence, not
-    # auth_type=='local_pin' (see the comment at routers/auth.py:452-459).
+    # A stored PIN does not permit platform-admin authentication to bypass Google.
     resp = client.post("/api/auth/pin", json={"employee_code": "MM-ITADMIN", "pin": DEMO_PIN})
-    assert resp.status_code == 200
-    assert resp.cookies.get("mmos_session") is not None
+    assert resp.status_code == 401
+    assert resp.cookies.get("mmos_session") is None
 
 
 def test_seed_demo_batch_requester_1_reports_up_to_the_approver(db, tmp_path):

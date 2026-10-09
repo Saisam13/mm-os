@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 from ipaddress import ip_address
+from urllib.parse import urlsplit
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -18,6 +19,25 @@ from .deps import client_ip
 # Paths that must answer even from outside the allowlist, so that health checks and
 # token verification never depend on network posture.
 ALWAYS_OPEN = ("/healthz", "/.well-known/jwks.json")
+
+
+class BrowserOriginGuard(BaseHTTPMiddleware):
+    """Cookie and sign-in mutations require the browser's same-origin proof.
+
+    Service keys are server-to-server credentials; they are not browser cookies.
+    """
+    async def dispatch(self, request: Request, call_next):
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            browser_route = not request.url.path.startswith("/api/agent/")
+            if browser_route:
+                origin = request.headers.get("origin")
+                configured = settings().public_url
+                expected = configured.rstrip("/") if configured else str(request.base_url).rstrip("/")
+                parsed = urlsplit(expected)
+                expected = f"{parsed.scheme}://{parsed.netloc}"
+                if origin != expected:
+                    return JSONResponse({"error": "origin_denied"}, status_code=403)
+        return await call_next(request)
 
 
 class NetworkGate(BaseHTTPMiddleware):

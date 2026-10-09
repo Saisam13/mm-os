@@ -6,7 +6,7 @@ the frontend. A hidden row is built from a Pydantic model (`TicketHiddenOut`) th
 """
 from __future__ import annotations
 
-from .mmos_seam import CurrentUser
+from .mmos_seam import CurrentUser, allows
 from .models import Ticket
 
 THREE_PERSON = ("requester_sub", "assignee_sub", "approver_sub")
@@ -21,13 +21,16 @@ def can_see_full(ticket: Ticket, viewer: CurrentUser) -> bool:
     # A.3): the locked decision is that a platform admin must not silently gain private
     # ticket bodies just by being MM OS's platform admin -- Service Desk's own "admin" role,
     # granted like any other grant, is what carries oversight here.
-    if "admin" in viewer.roles:
+    if allows(viewer, "ticket.private_oversight"):
         return True
     if viewer.sub in {getattr(ticket, f) for f in THREE_PERSON if getattr(ticket, f)}:
+        return True
+    policy = ticket.approval_policy or {}
+    if policy.get("mode") == "any_of" and viewer.sub in {a.get("sub") for a in policy.get("approvers", [])}:
         return True
     # Before anyone has claimed it, IT-wide triage needs to read it to triage it at all — a
     # private ticket with no assignee cannot otherwise ever reach it_review. Once claimed,
     # the strict three-person rule applies even to other agents. See `## Assumptions`.
-    if ticket.assignee_sub is None and "agent" in viewer.roles:
+    if ticket.assignee_sub is None and allows(viewer, "queue.read"):
         return True
     return False

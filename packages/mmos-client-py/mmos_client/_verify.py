@@ -17,10 +17,10 @@ contents — callers turn that into a 401 with no further detail.
 from __future__ import annotations
 
 import time
+import math
 
-from jose import jwt
-from jose.exceptions import JOSEError
-from jose.utils import base64url_decode  # noqa: F401  (imported for completeness/back-compat)
+import jwt
+from jwt.exceptions import PyJWTError as JOSEError
 
 
 class TokenError(Exception):
@@ -65,7 +65,7 @@ def verify_token(
     try:
         claims = jwt.decode(
             token,
-            key,
+            jwt.PyJWK.from_dict(key, algorithm="RS256"),
             algorithms=["RS256"],
             options={
                 "verify_aud": False,
@@ -73,9 +73,11 @@ def verify_token(
                 "verify_exp": False,
                 "verify_iat": False,
                 "verify_nbf": False,
+                "verify_sub": False,
+                "verify_jti": False,
             },
         )
-    except JOSEError:
+    except (JOSEError, ValueError, TypeError):
         raise TokenError("bad_signature")
 
     # 3 — iss
@@ -89,10 +91,21 @@ def verify_token(
     # 5 — exp / iat with skew
     now = time.time()
     exp = claims.get("exp")
-    if exp is None or now > float(exp) + skew_seconds:
-        raise TokenError("expired")
     iat = claims.get("iat")
-    if iat is not None and float(iat) > now + skew_seconds:
+    nbf = claims.get("nbf", iat)
+    if any(type(v) not in (int, float) or not math.isfinite(v) for v in (exp, iat, nbf)):
+        raise TokenError("invalid_time_claims")
+    if now > exp + skew_seconds:
+        raise TokenError("expired")
+    if exp <= iat or exp - iat > 900:
+        raise TokenError("invalid_token_lifetime")
+    if not isinstance(claims.get("sub"), str) or not claims["sub"] or not isinstance(claims.get("jti"), str) or not claims["jti"]:
+        raise TokenError("invalid_identity_claims")
+    for field in ("roles", "permissions"):
+        value = claims.get(field, [])
+        if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+            raise TokenError("invalid_authority_claims")
+    if max(iat, nbf) > now + skew_seconds:
         raise TokenError("not_yet_valid")
 
     # 6 — deny-list (sub or jti)

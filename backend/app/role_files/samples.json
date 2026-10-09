@@ -1,0 +1,18 @@
+{
+  "format": "mmos-roles/1", "service": "samples",
+  "permissions": {
+    "role.requester": "Existing requester workflow and own-object checks",
+    "role.stores": "Existing stores workflow and custody checks",
+    "role.qaqc": "Existing laboratory workflow and revision checks",
+    "role.hod": "Existing HOD review and approval checks",
+    "role.admin": "Existing service administration and oversight checks"
+  },
+  "roles": [
+    {"key":"requester","name":"Requester","description":"Create and track own sample requests","permissions":["role.requester"]},
+    {"key":"stores","name":"Stores","description":"Receive and transfer samples","permissions":["role.stores"]},
+    {"key":"qaqc","name":"QA/QC","description":"Manage laboratory work and immutable result revisions","permissions":["role.qaqc"]},
+    {"key":"hod","name":"HOD","description":"Review controlled catalogue and workflow changes","permissions":["role.hod"]},
+    {"key":"admin","name":"Administrator","description":"Manage access and ERP configuration","permissions":["role.admin"]}
+  ],
+  "remove_unlisted": false, "assign": {"mode":"missing","rules":[]}
+}

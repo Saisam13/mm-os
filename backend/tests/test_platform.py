@@ -10,7 +10,7 @@ import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from jose import jwt
+import jwt
 from sqlalchemy import select
 
 from app import models
@@ -65,7 +65,7 @@ def test_token_service_issues_token_scoped_to_that_service(
     assert body["token_type"] == "Bearer"
     assert body["launch_url"] == f"{service.base_url}/_mmos/accept#token={body['access_token']}"
 
-    claims = jwt.get_unverified_claims(body["access_token"])
+    claims = jwt.decode(body["access_token"], options={'verify_signature': False})
     assert claims["aud"] == "itemcode"
     assert claims["roles"] == ["viewer"]
     assert claims["sub"] == user.subject

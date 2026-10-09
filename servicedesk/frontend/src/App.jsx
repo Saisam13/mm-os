@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { decodeClaims, getToken, clearToken } from "./api.js";
+import { api, decodeClaims, getToken, clearToken } from "./api.js";
 import DevSignIn from "./DevSignIn.jsx";
 import MyRequests from "./views/MyRequests.jsx";
 import DepartmentQueue from "./views/DepartmentQueue.jsx";
@@ -18,63 +18,39 @@ const NAV = [
 ];
 
 export default function App() {
-  const [token, setTokenState] = useState(() => {
-    // Primary handoff path: the MM OS /_mmos/accept page sets the HttpOnly
-    // session cookie then redirects to /?mmos_token={token}. We read it here,
-    // persist it to localStorage for subsequent API calls (which use Bearer),
-    // and clean the URL so the token doesn't linger in the address bar or
-    // browser history.
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlToken = urlParams.get("mmos_token");
-    if (urlToken) {
-      try {
-        setToken(urlToken);
-        urlParams.delete("mmos_token");
-        const clean = window.location.pathname + (urlParams.toString() ? "?" + urlParams.toString() : "");
-        history.replaceState(null, "", clean);
-        return urlToken;
-      } catch (_) {}
-    }
-    // Fallback: hash-based token (direct deep-link or legacy accept page).
-    const hash = window.location.hash || "";
-    const m = hash.match(/token=([^&]+)/);
-    if (m) {
-      try {
-        const t = decodeURIComponent(m[1]);
-        if (t) {
-          setToken(t);
-          history.replaceState(null, "", window.location.pathname + window.location.search);
-          return t;
-        }
-      } catch (_) {}
-    }
-    return getToken();
-  });
+  const [me, setMe] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [view, setView] = useState("mine");
   const [detailId, setDetailId] = useState(null);
 
   useEffect(() => {
-    // /_mmos/accept handshake would normally arrive here already signed in — nothing to do
-    // once a token is in localStorage (see DevSignIn.jsx and `## Assumptions`).
+    // Metadata is returned after server verification of the HttpOnly cookie.
+    // Remove legacy URL credentials without reading them into JS or storage.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("mmos_token");
+    history.replaceState(null, "", url.pathname + url.search);
+    let active = true;
+    api.session().then(user => { if (active) setMe(user); })
+      .catch(() => { if (active) setMe(null); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, []);
 
-  if (!token) {
-    return <DevSignIn onSignedIn={() => setTokenState(getToken())} />;
-  }
+  if (loading) return <main><p>Loading your session…</p></main>;
+  if (!me) return <DevSignIn onSignedIn={() => setMe(decodeClaims(getToken()))} />;
 
-  const me = decodeClaims(token) || {};
   const roles = me.roles || [];
-  const isAgent = roles.includes("agent") || roles.includes("admin") || me.platform_admin;
-  const isAdmin = roles.includes("admin");
+  const permissions = me.permissions;
+  const isAgent = permissions ? permissions.includes("queue.read") : roles.includes("agent") || roles.includes("admin");
+  const isAdmin = permissions ? permissions.includes("service.admin") : roles.includes("admin");
   const initials = (me.emp || me.name || "?").slice(0, 2).toUpperCase();
 
   function openTicket(id) {
     setDetailId(id);
     setView("detail");
   }
-  function signOut() {
-    clearToken();
-    setTokenState(null);
+  async function signOut() {
+    try { await api.logout(); } finally { clearToken(); setMe(null); }
   }
 
   return (

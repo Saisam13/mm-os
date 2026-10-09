@@ -23,6 +23,7 @@ from urllib.parse import quote
 
 from ..models import Employee, Grant, Service, ServiceRole, User, UserCapability
 from ..onboarding import needs_onboarding
+from ..deps import authenticated_user
 from ..provision import FUNCTIONAL_JOB_TITLE, must_change_pin
 
 router = APIRouter()
@@ -83,7 +84,7 @@ def public_services(db: OrmSession = Depends(get_db)):
 
 @router.get("/me")
 def me(
-    user: User = Depends(current_user),
+    user: User = Depends(authenticated_user),
     employee: Employee = Depends(current_employee),
     db: OrmSession = Depends(get_db),
 ):

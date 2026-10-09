@@ -8,7 +8,6 @@ placeholder page. Do not add credential storage here without first satisfying SE
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -27,16 +26,9 @@ cfg = settings()
 # full authentication bypass if it ever reaches a real deployment. Absence of configuration
 # must never mean absence of authentication, so a production environment that is still in
 # stub mode refuses to boot rather than silently serving open. Set AUTH_MODE=http (with
-# MMOS_SERVICE_KEY) for any non-development environment. An explicit
-# PWMGR_ALLOW_STUB_IN_PROD=1 exists only as a deliberate, logged escape hatch — matching
-# servicedesk's SERVICEDESK_ALLOW_STUB_IN_PROD convention.
+# MMOS_SERVICE_KEY) for production. No override permits stub auth.
 if cfg.environment == "production" and cfg.auth_mode != "http":
-    if os.environ.get("PWMGR_ALLOW_STUB_IN_PROD") != "1":
-        raise RuntimeError(
-            "Password Manager refuses to start: environment=production but AUTH_MODE="
-            f"{cfg.auth_mode!r}. Set AUTH_MODE=http and MMOS_SERVICE_KEY, or set "
-            "PWMGR_ALLOW_STUB_IN_PROD=1 to override (never do this on a real server)."
-        )
+    raise RuntimeError("Password Manager refuses to start: production requires AUTH_MODE=http and a dedicated MMOS service key.")
 
 app = FastAPI(title="Password Manager", version=cfg.version, docs_url=None, redoc_url=None)
 

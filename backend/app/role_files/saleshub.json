@@ -1,0 +1,12 @@
+{
+  "format": "mmos-roles/1",
+  "service": "saleshub",
+  "permissions": {"view":"Read sales data and own activity", "edit":"Change sales records and run analyses", "setup":"Manage service settings, integrations and caches"},
+  "roles": [
+    {"key":"viewer","name":"Viewer","description":"Read sales data and own activity","default":true,"permissions":["view"]},
+    {"key":"editor","name":"Editor","description":"Change sales records and run analyses","permissions":["view","edit"]},
+    {"key":"admin","name":"Administrator","description":"Manage settings, integrations and service activity oversight","permissions":["view","edit","setup"]}
+  ],
+  "remove_unlisted":false,
+  "assign":{"mode":"missing","rules":[],"default":"viewer"}
+}

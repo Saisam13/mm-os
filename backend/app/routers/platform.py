@@ -48,6 +48,7 @@ from ..roles_io import validate as validate_role_file
 from ..security import new_service_key, permissions_version
 from .agent import _config_version
 from .tokens import live_grants, token_access
+from ..authorization import permits, require_target, require_grant_ceiling, revoke_identity, protected_admin_change, scope_query
 
 
 def _employee_of(db: OrmSession, user_id: uuid.UUID) -> Employee | None:
@@ -405,6 +406,11 @@ def patch_service(
     if service is None:
         raise HTTPException(404, detail={"error": "service_not_found"})
     changes = body.model_dump(exclude_unset=True)
+    if changes.get("is_active") is False and service.is_active:
+        now = datetime.now(timezone.utc)
+        for user in db.scalars(select(User).join(Grant).where(Grant.service_id == service.id).distinct()):
+            db.add(Revocation(subject=user.subject, service_id=service.id, reason="service_disabled",
+                              revoked_by=admin.id, revoked_at=now, purge_after=now + timedelta(hours=24)))
     for k, v in changes.items():
         setattr(service, k, v)
     audit(
@@ -697,10 +703,11 @@ def person_access(user_id: uuid.UUID, admin: User = Depends(require_admin), db: 
 def list_grants(
     service: str | None = Query(None),
     user: uuid.UUID | None = Query(None),
-    admin: User = Depends(require_capability("grants.view")),
+    admin: User = Depends(require_capability("grants.view", allow_scoped=True)),
     db: OrmSession = Depends(get_db),
 ):
-    q = select(Grant)
+    q = select(Grant).join(User, Grant.user_id == User.id).join(Employee, User.employee_id == Employee.id)
+    q = scope_query(db, admin, "grants.view", q, Employee.department_id)
     if service:
         q = q.join(Service, Grant.service_id == Service.id).where(Service.slug == service)
     if user:
@@ -713,7 +720,7 @@ def list_grants(
 def create_grant(
     body: GrantCreate,
     request: Request,
-    admin: User = Depends(require_capability("grants.add")),
+    admin: User = Depends(require_capability("grants.add", allow_scoped=True)),
     db: OrmSession = Depends(get_db),
 ):
     service = db.scalar(select(Service).where(Service.slug == body.slug))
@@ -724,6 +731,10 @@ def create_grant(
     )
     if role is None:
         raise HTTPException(404, detail={"error": "role_not_found"})
+    target = db.get(User, body.user_id)
+    if target is None:
+        raise HTTPException(404, detail={"error": "user_not_found"})
+    require_grant_ceiling(db, admin, target, service, role, expires_at=body.expires_at)
     if db.scalar(
         select(Grant).where(Grant.user_id == body.user_id, Grant.service_id == service.id,
                             Grant.service_role_id == role.id)
@@ -758,13 +769,14 @@ def create_grant(
 def delete_grant(
     id: uuid.UUID,
     request: Request,
-    admin: User = Depends(require_capability("grants.revoke")),
+    admin: User = Depends(require_capability("grants.revoke", allow_scoped=True)),
     db: OrmSession = Depends(get_db),
 ):
     grant = db.get(Grant, id)
     if grant is None:
         raise HTTPException(404, detail={"error": "grant_not_found"})
     user = db.get(User, grant.user_id)
+    require_target(db, admin, "grants.revoke", user.employee)
     now = datetime.now(timezone.utc)
     # Same transaction as the delete — access removal is never a two-step that can
     # half-fail (docs/03-api-contract.md, "Rules that hold everywhere").
@@ -796,7 +808,7 @@ def delete_grant(
 def bulk_grants(
     body: GrantBulk,
     request: Request,
-    admin: User = Depends(require_capability("grants.add")),
+    admin: User = Depends(require_capability("grants.add", allow_scoped=True)),
     db: OrmSession = Depends(get_db),
 ):
     service = db.scalar(select(Service).where(Service.slug == body.slug))
@@ -814,6 +826,8 @@ def bulk_grants(
     if body.department:
         q = q.where(Employee.hr_department.in_(body.department))
     users = db.scalars(q).all()
+    for target in users:
+        require_grant_ceiling(db, admin, target, service, role)
 
     existing: set[uuid.UUID] = set()
     if users:
@@ -870,7 +884,7 @@ def batch_grants(
     db: OrmSession = Depends(get_db),
 ):
     """Add or replace several services' roles for one human in one transaction."""
-    if not has_capability(db, actor, "grants.add"):
+    if not has_capability(db, actor, "grants.add", any_scope=True):
         raise HTTPException(403, detail={"error": "capability_required"})
     user = db.get(User, body.user_id)
     if user is None:
@@ -888,9 +902,11 @@ def batch_grants(
         )))
         if len({r.key for r in roles}) != len(set(keys)):
             raise HTTPException(422, detail={"error": "invalid_service_role", "service": slug})
+        for role in roles:
+            require_grant_ceiling(db, actor, user, service, role)
         replace = bool(item.get("replace", False))
-        if replace and (not has_capability(db, actor, "grants.change") or
-                        not has_capability(db, actor, "grants.revoke")):
+        if replace and (not has_capability(db, actor, "grants.change", department_id=user.employee.department_id) or
+                        not has_capability(db, actor, "grants.revoke", department_id=user.employee.department_id)):
             raise HTTPException(403, detail={"error": "capability_required"})
         validated.append((service, roles, replace))
 
@@ -954,7 +970,9 @@ def grant_capability(
 ):
     if body.capability not in CAPABILITIES:
         raise HTTPException(422, detail={"error": "unknown_capability"})
-    if not actor.is_platform_admin and not has_capability(db, actor, body.capability):
+    if not actor.is_platform_admin and not permits(db, actor, body.capability, department_id=body.scope_department_id):
+        raise HTTPException(403, detail={"error": "delegation_escalation"})
+    if not actor.is_platform_admin and actor.id == user_id:
         raise HTTPException(403, detail={"error": "delegation_escalation"})
     if db.get(User, user_id) is None:
         raise HTTPException(404, detail={"error": "user_not_found"})
@@ -1379,6 +1397,11 @@ def kill_user(
     user = db.get(User, id)
     if user is None:
         raise HTTPException(404, detail={"error": "user_not_found"})
+
+    if user.is_platform_admin:
+        protected_admin_change(db, admin, user, removing=True)
+    user.is_active = False
+    revoke_identity(db, user, reason="admin_kill", actor_id=admin.id)
 
     now = datetime.now(timezone.utc)
     # Subject-level: global, blocks every service's verification of this user at once.

@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..mmos_seam import CurrentUser, get_current_user, require_role
+from ..mmos_seam import CurrentUser, get_current_user, require_role, require_permission, allows
 from ..models import Event, Ticket
 from ..notifications import notify
 from ..org_chart import get_person
@@ -57,7 +57,7 @@ def _is_agent(user: CurrentUser) -> bool:
     # No `platform_admin` bypass -- see app/privacy.py's can_see_full() and
     # handoff/b1-assembly.md "A4-A5 auth seam" for why: access to the agent console is
     # granted through Service Desk's own roles, the same as private-ticket visibility.
-    return "agent" in user.roles or "admin" in user.roles
+    return allows(user, "ticket.transition")
 
 
 def _serialize(ticket: Ticket, viewer: CurrentUser, db: Session | None = None):
@@ -71,7 +71,7 @@ def _serialize(ticket: Ticket, viewer: CurrentUser, db: Session | None = None):
 
 @router.post("/tickets", response_model=TicketOut, status_code=201)
 def create_ticket(
-    body: TicketCreate, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)
+    body: TicketCreate, db: Session = Depends(get_db), user: CurrentUser = Depends(require_permission("ticket.create"))
 ):
     now = datetime.now(timezone.utc)
     initial_status = "submitted" if body.kind == "automation" else "open"
@@ -99,6 +99,10 @@ def create_ticket(
         if routing.approver_sub is None:
             raise HTTPException(status_code=422, detail={"error": "no_approver_available"})
         ticket.approver_sub = routing.approver_sub
+        ticket.approval_policy = {"mode": routing.mode or "sequence", "rule_id": routing.rule_id,
+                                  "approvers": [a for a in (routing.approvers or [{"sub": routing.approver_sub}])
+                                                if a.get("sub") and a["sub"] != user.sub]}
+        ticket.approved_by = []
 
     db.add(ticket)
     db.flush()
@@ -147,10 +151,13 @@ def list_queue(db: Session = Depends(get_db), user: CurrentUser = Depends(requir
 def list_approvals(db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
     rows = db.scalars(
         select(Ticket)
-        .where(Ticket.approver_sub == user.sub, Ticket.status == "manager_review")
+        .where(Ticket.status == "manager_review")
         .order_by(Ticket.created_at.desc())
     ).all()
-    return rows
+    return [t for t in rows if t.approver_sub == user.sub or (
+        (t.approval_policy or {}).get("mode") == "any_of" and
+        user.sub in {a.get("sub") for a in t.approval_policy.get("approvers", [])}
+    )]
 
 
 @router.get("/tickets/{ticket_id}")
@@ -164,13 +171,19 @@ def get_ticket(ticket_id: UUID, db: Session = Depends(get_db), user: CurrentUser
 @router.post("/tickets/{ticket_id}/assign", response_model=TicketOut)
 def assign_ticket(
     ticket_id: UUID, body: AssignIn, db: Session = Depends(get_db),
-    user: CurrentUser = Depends(require_role("agent")),
+    user: CurrentUser = Depends(require_permission("ticket.assign")),
 ):
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail={"error": "not_found"})
+    if not can_see_full(ticket, user):
+        raise HTTPException(403, {"error": "private_ticket"})
+    old_assignee = ticket.assignee_sub
     ticket.assignee_sub = body.assignee_sub or user.sub
     ticket.updated_at = datetime.now(timezone.utc)
+    if ticket.assignee_sub != old_assignee:
+        db.add(Event(ticket_id=ticket.id, actor_sub=user.sub, from_status=ticket.status,
+                     to_status=ticket.status, detail={"action": "assigned", "before": old_assignee, "after": ticket.assignee_sub}))
     db.commit()
     db.refresh(ticket)
     return ticket
@@ -184,6 +197,8 @@ def transition_ticket(
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail={"error": "not_found"})
+    if not can_see_full(ticket, user):
+        raise HTTPException(403, {"error": "private_ticket"})
 
     key = (ticket.kind, ticket.status, body.to_status)
     if key not in GENERIC_ALLOWED:

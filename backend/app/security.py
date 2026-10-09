@@ -16,7 +16,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import jwt
+import jwt
 
 from .config import settings
 
@@ -28,6 +28,8 @@ def _load_or_create_key() -> rsa.RSAPrivateKey:
     path = settings().signing_key_path
     if path.exists():
         return serialization.load_pem_private_key(path.read_bytes(), password=None)
+    if settings().environment == "production":
+        raise RuntimeError("Production requires a mounted MMOS signing key; automatic key creation is disabled.")
     # Dev convenience only. In production the key is mounted by Coolify as a secret file.
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -87,7 +89,8 @@ def permissions_version(permissions) -> str:
 
 
 def mint_service_token(
-    *, user, employee, service_slug: str, roles: list[str], permissions: list[str] | None = None
+    *, user, employee, service_slug: str, roles: list[str], permissions: list[str] | None = None,
+    expires_at: datetime | None = None,
 ) -> tuple[str, str, int]:
     """Return (token, jti, ttl_seconds).
 
@@ -95,17 +98,24 @@ def mint_service_token(
     """
     cfg = settings()
     now = datetime.now(timezone.utc)
+    expiry = now + timedelta(seconds=cfg.service_token_ttl_seconds)
+    if expires_at is not None:
+        expiry = min(expiry, expires_at)
+    ttl = max(0, int(expiry.timestamp()) - int(now.timestamp()))
     jti = uuid.uuid4().hex
+    from .provision import FUNCTIONAL_JOB_TITLE
     claims = {
         "iss": cfg.issuer,
         "sub": f"user:{user.id}",
         "aud": service_slug,
         "jti": jti,
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(seconds=cfg.service_token_ttl_seconds)).timestamp()),
+        "exp": int(expiry.timestamp()),
+        "nbf": int(now.timestamp()),
         "emp": employee.employee_code,
         "email": employee.work_email,
         "name": employee.full_name,
+        "actor_type": "service" if employee.job_title == FUNCTIONAL_JOB_TITLE else "human",
         "dept": employee.hr_department,
         "division": employee.division,
         "band": employee.band,
@@ -120,7 +130,7 @@ def mint_service_token(
     token = jwt.encode(
         claims, _private_pem, algorithm="RS256", headers={"kid": cfg.signing_key_id}
     )
-    return token, jti, cfg.service_token_ttl_seconds
+    return token, jti, ttl
 
 
 # ── shell sessions ────────────────────────────────────────────────────────

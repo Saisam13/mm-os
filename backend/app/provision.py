@@ -77,12 +77,14 @@ def issue_one_time_pin(
     """Set `user`'s PIN to a one-time value and flag it must-change. `pin_set_at` is set to now
     (a real PIN has been issued by IT), and the must-change row is what makes it one-time.
     Returns the raw PIN -- the caller shows it once and never stores it."""
+    from .authorization import revoke_identity
     pin = pin or generate_pin(length)
     user.pin_hash = hash_pin(pin)  # raises ValueError on a bad explicit pin
     user.pin_set_at = datetime.now(timezone.utc)
     user.failed_pin_attempts = 0
     user.locked_until = None
     _set_must_change(db, user)
+    revoke_identity(db, user, reason="credential_reset")
     return pin
 
 

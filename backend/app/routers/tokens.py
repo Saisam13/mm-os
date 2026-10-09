@@ -92,9 +92,11 @@ def issue_service_token(
         )
 
     roles, permissions = token_access(grants)
+    grant_expiries = [g.expires_at for g in grants if g.expires_at is not None]
     token, jti, ttl = mint_service_token(
         user=user, employee=employee, service_slug=service.slug,
         roles=roles, permissions=permissions,
+        expires_at=min(grant_expiries) if grant_expiries else None,
     )
     audit(
         db,

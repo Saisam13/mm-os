@@ -17,12 +17,24 @@ logger = logging.getLogger("mmos_client.denylist")
 
 
 class DenyList:
-    def __init__(self):
+    def __init__(self, state_store=None):
         # sub -> latest revocation time (epoch seconds)
         self._subs: dict[str, float] = {}
         self._jtis: set[str] = set()
         self._since: str | None = None
         self._lock = threading.Lock()
+        self.service_active = True
+        self.last_success_at: float | None = None
+        self._store = state_store
+        if self._store:
+            saved = self._store.read("revocations")
+            if type(saved.get("last_success_at")) in (int, float) and 0 <= time.time() - saved["last_success_at"] <= 900:
+                subjects = saved.get("subjects", {})
+                jtis = saved.get("jtis", [])
+                self._subs = {str(k): float(v) for k, v in subjects.items() if type(v) in (int, float)} if isinstance(subjects, dict) else {}
+                self._jtis = {v for v in jtis if isinstance(v, str)} if isinstance(jtis, list) else set()
+                self.service_active = saved.get("service_active") is True
+                self.last_success_at = saved["last_success_at"]
 
     def is_revoked(self, *, sub: str | None, jti: str | None, iat: float | None = None) -> bool:
         """A subject revocation cuts off tokens issued at or before it, not the person forever.
@@ -32,13 +44,20 @@ class DenyList:
         out until this process restarted. A token with no `iat` is treated as old.
         """
         with self._lock:
+            if not self.service_active:
+                return True
             if jti is not None and jti in self._jtis:
                 return True
             at = self._subs.get(sub) if sub is not None else None
             return at is not None and (iat is None or iat <= at)
 
-    def merge(self, *, revoked_subjects: list[dict], revoked_jti: list, now: str) -> None:
+    def merge(self, *, revoked_subjects: list[dict], revoked_jti: list, now: str, service_active: bool = True, snapshot: bool = False) -> None:
         with self._lock:
+            if snapshot:
+                self._subs = {}
+                self._jtis = set()
+            self.service_active = service_active
+            self.last_success_at = time.time()
             for row in revoked_subjects or []:
                 s = row.get("sub") if isinstance(row, dict) else row
                 if s:
@@ -49,6 +68,9 @@ class DenyList:
                 if j:
                     self._jtis.add(j)
             self._since = now
+            if self._store:
+                self._store.write("revocations", {"last_success_at": self.last_success_at,
+                    "service_active": self.service_active, "subjects": self._subs, "jtis": sorted(self._jtis)})
 
     @property
     def since(self) -> str | None:
@@ -118,6 +140,8 @@ class DenyListPoller:
                 revoked_subjects=data.get("revoked_subjects", []),
                 revoked_jti=data.get("revoked_jti", []),
                 now=data.get("now", self._since),
+                service_active=data.get("service_active", True),
+                snapshot=data.get("snapshot") is True,
             )
             self._since = data.get("now", self._since)
             self._next_interval = int(data.get("poll_after_seconds", self._default_interval))
@@ -128,13 +152,16 @@ class DenyListPoller:
             return False
 
     def start(self) -> None:
-        if self._thread is not None:
+        if self._thread is not None and self._thread.is_alive():
             return
+        self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True, name="mmos-denylist-poller")
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=6.0)
 
     def _run(self) -> None:
         while not self._stop.is_set():

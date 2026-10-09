@@ -320,6 +320,7 @@ export const mock: MmosApi = {
     signedOut = true
     window.localStorage.setItem('mmos_mock_signed_out', '1')
   },
+  async changePin() { await delay(150) },
 
   async getMe() {
     await delay(200)

@@ -36,6 +36,7 @@ class TicketOut(BaseModel):
     body: str
     requester_sub: str
     requester_code: str
+    requester_name: str | None = None
     requester_dept: str
     service_slug: str | None
     priority: str
@@ -81,6 +82,8 @@ class CommentOut(BaseModel):
     id: UUID
     ticket_id: UUID
     author_sub: str
+    author_name: str | None = None
+    author_code: str | None = None
     body: str
     is_internal: bool
     created_at: datetime
@@ -107,6 +110,8 @@ class ProposalOut(BaseModel):
     id: UUID
     ticket_id: UUID
     author_sub: str
+    author_name: str | None = None
+    author_code: str | None = None
     scope_summary: str
     effort_days: float | None
     resources: dict
@@ -129,6 +134,7 @@ class DecisionOut(BaseModel):
     proposal_id: UUID | None
     approver_sub: str
     approver_code: str
+    approver_name: str | None = None
     decision: str
     comment: str | None
     snapshot: dict
@@ -141,6 +147,8 @@ class EventOut(BaseModel):
     id: UUID
     ticket_id: UUID
     actor_sub: str | None
+    actor_name: str | None = None
+    actor_code: str | None = None
     from_status: str | None
     to_status: str | None
     detail: dict

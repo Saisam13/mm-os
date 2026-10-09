@@ -32,6 +32,10 @@ from ..provision import (
 )
 from ..seed import apply_diff, compute_diff, load_sheet_rows
 from ..security import hash_pin
+from ..authorization import (
+    permits, require_target, scope_query, protected_admin_change, protect_identity_target,
+    revoke_identity, require_grant_ceiling, protect_credential_target,
+)
 
 router = APIRouter()
 
@@ -148,8 +152,8 @@ def create_person(
     HR-onboarding delegates may use this endpoint without becoming general administrators,
     but must supply a unique onboarding reference and stay inside their department scope.
     """
-    can_create = has_capability(db, actor, "people.create")
-    hr_create = has_capability(db, actor, "hr_onboarding.create")
+    can_create = has_capability(db, actor, "people.create", any_scope=True)
+    hr_create = has_capability(db, actor, "hr_onboarding.create", any_scope=True)
     if not (can_create or hr_create):
         raise HTTPException(403, {"error": "capability_required", "message": "Requires people.create."})
 
@@ -165,6 +169,12 @@ def create_person(
     department = db.get(Department, department_id)
     if department is None or not department.is_active:
         raise HTTPException(422, {"error": "invalid_department", "message": "Choose an active department."})
+    if not (permits(db, actor, "people.create", department_id=department.id) or
+            permits(db, actor, "hr_onboarding.create", department_id=department.id)):
+        raise HTTPException(403, {"error": "department_scope_denied"})
+    if data.get("approval_level") or data.get("is_approver"):
+        if not permits(db, actor, "people.authority", department_id=department.id):
+            raise HTTPException(403, {"error": "capability_required", "message": "Requires people.authority."})
 
     onboarding_ref = data.get("onboarding_ref")
     if hr_create and not can_create:
@@ -213,7 +223,7 @@ def create_person(
             if role is None:
                 raise HTTPException(422, {"error": "invalid_service_role", "service": service.slug, "role": role_key})
             grant_specs.append((service, role, spec))
-    if grant_specs and not has_capability(db, actor, "grants.add"):
+    if grant_specs and not has_capability(db, actor, "grants.add", department_id=department.id):
         raise HTTPException(403, {"error": "capability_required", "message": "Requires grants.add."})
 
     emp = Employee(
@@ -233,6 +243,7 @@ def create_person(
         db.add(user)
         db.flush()
         for service, role, spec in grant_specs:
+            require_grant_ceiling(db, actor, user, service, role)
             grant = Grant(user_id=user.id, service_id=service.id, service_role_id=role.id,
                           granted_by=actor.id, reason=spec.get("reason"), origin=spec.get("origin", "manual"))
             db.add(grant)
@@ -275,10 +286,11 @@ def list_employees(
     status: str | None = None,
     limit: int = Query(50, le=200),
     cursor: str | None = None,
-    admin: User = Depends(require_capability("people.view")),
+    admin: User = Depends(require_capability("people.view", allow_scoped=True)),
     db: OrmSession = Depends(get_db),
 ):
     stmt = select(Employee).order_by(Employee.employee_code)
+    stmt = scope_query(db, admin, "people.view", stmt, Employee.department_id)
     if dept:
         stmt = stmt.where(Employee.hr_department == dept)
     if status:
@@ -305,6 +317,8 @@ def create_employee(body: dict, admin: User = Depends(require_capability("people
         raise HTTPException(422, {"error": "missing_fields", "message": f"Required: {missing}"})
 
     emp = Employee(**{f: body.get(f) for f in EMPLOYEE_FIELDS if f in body})
+    if body.get("approval_level") or body.get("is_approver") or body.get("manager_id"):
+        require_target(db, admin, "people.authority", emp)
     db.add(emp)
     try:
         db.flush()
@@ -318,13 +332,26 @@ def create_employee(body: dict, admin: User = Depends(require_capability("people
 
 
 @router.patch("/employees/{employee_id}")
-def update_employee(employee_id: str, body: dict, request: Request, admin: User = Depends(require_capability("people.edit")), db: OrmSession = Depends(get_db)):
+def update_employee(employee_id: str, body: dict, request: Request, admin: User = Depends(require_capability("people.edit", allow_scoped=True)), db: OrmSession = Depends(get_db)):
     emp = _get_or_404(db, Employee, employee_id, "employee_not_found")
+    require_target(db, admin, "people.edit", emp)
+    if emp.user:
+        protect_identity_target(db, admin, emp.user)
+        if "work_email" in body:
+            require_target(db, admin, "credentials.reset", emp)
+            protect_credential_target(db, admin, emp.user)
+    if "status" in body and body["status"] not in {"active", "suspended", "exited"}:
+        raise HTTPException(422, {"error": "invalid_status"})
+    if any(key not in {*EMPLOYEE_PATCH_FIELDS, "department_id"} for key in body):
+        raise HTTPException(422, {"error": "unknown_fields"})
+    if any(key in body for key in ("approval_level", "is_approver", "manager_id", "band")):
+        require_target(db, admin, "people.authority", emp)
     protected_status_change = (
         body.get("status") in {"suspended", "exited"} and emp.user
         and emp.user.is_platform_admin and emp.user.is_active
     )
     if protected_status_change:
+        protected_admin_change(db, admin, emp.user, removing=True)
         active_admins = db.scalar(select(func.count()).select_from(User).join(Employee).where(
             User.is_platform_admin.is_(True), User.is_active.is_(True), Employee.status == "active"
         )) or 0
@@ -334,7 +361,7 @@ def update_employee(employee_id: str, body: dict, request: Request, admin: User 
             db.commit()
             raise HTTPException(409 if admin.is_platform_admin else 403,
                                 {"error": "protected_admin", "message": "An active IT Admin must remain."})
-    if ("department_id" in body or "hr_department" in body) and not has_capability(db, admin, "departments.assign"):
+    if ("department_id" in body or "hr_department" in body) and not has_capability(db, admin, "departments.assign", department_id=emp.department_id):
         raise HTTPException(403, {"error": "capability_required", "message": "Requires departments.assign."})
     if "department_id" in body:
         try:
@@ -350,9 +377,13 @@ def update_employee(employee_id: str, body: dict, request: Request, admin: User 
         if department is None:
             raise HTTPException(422, {"error": "invalid_department", "message": "Choose an existing department."})
         emp.department_id = department.id
+    if "department_id" in body or "hr_department" in body:
+        require_target(db, admin, "departments.assign", emp)
     for f in EMPLOYEE_PATCH_FIELDS:
         if f in body:
             setattr(emp, f, body[f])
+    if emp.user and any(f in body for f in ("status", "department_id", "hr_department", "approval_level", "is_approver", "manager_id", "band")):
+        revoke_identity(db, emp.user, reason="employee_authority_changed", actor_id=admin.id)
     try:
         db.flush()
     except IntegrityError:
@@ -376,18 +407,23 @@ def _emails_out(db: OrmSession, emp: Employee) -> dict:
 
 
 @router.get("/employees/{employee_id}/emails")
-def get_employee_emails(employee_id: str, admin: User = Depends(require_capability("people.view")), db: OrmSession = Depends(get_db)):
-    return _emails_out(db, _get_or_404(db, Employee, employee_id, "employee_not_found"))
+def get_employee_emails(employee_id: str, admin: User = Depends(require_capability("people.view", allow_scoped=True)), db: OrmSession = Depends(get_db)):
+    emp = _get_or_404(db, Employee, employee_id, "employee_not_found")
+    require_target(db, admin, "people.view", emp)
+    return _emails_out(db, emp)
 
 
 @router.put("/employees/{employee_id}/emails")
-def set_employee_emails(employee_id: str, body: dict, request: Request, admin: User = Depends(require_capability("people.edit")), db: OrmSession = Depends(get_db)):
+def set_employee_emails(employee_id: str, body: dict, request: Request, admin: User = Depends(require_capability("credentials.reset", allow_scoped=True)), db: OrmSession = Depends(get_db)):
     """Add or change the addresses a person can sign in with. `official` is the company
     address (Google sign-in); `personal` is an optional Gmail that still needs the person to
     type their employee code the first time. Send only the field being changed; an empty
     string removes that address (removing `official` switches them to PIN sign-in)."""
     emp = _get_or_404(db, Employee, employee_id, "employee_not_found")
     user = emp.user
+    require_target(db, admin, "credentials.reset", emp)
+    if user:
+        protect_credential_target(db, admin, user)
     changed = []
 
     def end_sessions():
@@ -452,6 +488,8 @@ def set_employee_emails(employee_id: str, body: dict, request: Request, admin: U
         db.rollback()
         raise HTTPException(409, {"error": "email_in_use", "message": "That address already belongs to another account."})
     if changed:
+        if user:
+            revoke_identity(db, user, reason="identity_email_changed", actor_id=admin.id)
         audit(db, action="employee.emails", actor_user_id=admin.id, target_type="employee",
               target_id=emp.id, ip=client_ip(request), fields=changed)
     db.commit()
@@ -463,7 +501,7 @@ def set_employee_emails(employee_id: str, body: dict, request: Request, admin: U
 def import_employees(
     file: UploadFile,
     commit: bool = Query(False),
-    admin: User = Depends(require_capability("people.create")),
+    admin: User = Depends(require_admin),
     db: OrmSession = Depends(get_db),
 ):
     """Dry run by default (see docs/03). `?commit=true` applies exactly the same diff that
@@ -556,10 +594,11 @@ def list_users(
     q: str | None = None,
     is_active: bool | None = None,
     limit: int = Query(50, le=200),
-    admin: User = Depends(require_capability("people.view")),
+    admin: User = Depends(require_capability("people.view", allow_scoped=True)),
     db: OrmSession = Depends(get_db),
 ):
     stmt = select(User, Employee).join(Employee, User.employee_id == Employee.id).order_by(Employee.employee_code)
+    stmt = scope_query(db, admin, "people.view", stmt, Employee.department_id)
     if is_active is not None:
         stmt = stmt.where(User.is_active == is_active)
     rows = list(db.execute(stmt))
@@ -578,13 +617,22 @@ def list_users(
 @router.patch("/users/{user_id}")
 def update_user(user_id: str, body: dict, request: Request, admin: User = Depends(current_user), db: OrmSession = Depends(get_db)):
     user = _get_or_404(db, User, user_id, "user_not_found")
+    require_target(db, admin, "people.edit", user.employee)
+    if not body or any(key not in {"is_platform_admin", "is_active"} for key in body) or any(type(value) is not bool for value in body.values()):
+        raise HTTPException(422, {"error": "invalid_user_patch"})
+    if "is_platform_admin" in body:
+        protected_admin_change(db, admin, user, removing=not body["is_platform_admin"])
+        if admin.id == user.id and body["is_platform_admin"] and not user.is_platform_admin:
+            raise HTTPException(403, {"error": "delegation_escalation"})
+    if user.is_platform_admin and body.get("is_active") is False:
+        protected_admin_change(db, admin, user, removing=True)
 
     ip = client_ip(request)
     now = datetime.now(timezone.utc)
 
     if "is_platform_admin" in body and not has_capability(db, admin, "admin_roles.manage"):
         raise HTTPException(403, {"error": "capability_required"})
-    if "is_active" in body and not has_capability(db, admin, "people.edit"):
+    if "is_active" in body and not has_capability(db, admin, "people.edit", department_id=user.employee.department_id):
         raise HTTPException(403, {"error": "capability_required"})
     if user.is_platform_admin and not admin.is_platform_admin and (
         body.get("is_platform_admin") is False or body.get("is_active") is False
@@ -611,6 +659,7 @@ def update_user(user_id: str, body: dict, request: Request, admin: User = Depend
         new_admin = bool(body["is_platform_admin"])
         if new_admin != user.is_platform_admin:
             user.is_platform_admin = new_admin
+            revoke_identity(db, user, reason="platform_authority_changed", actor_id=admin.id)
             audit(db, action="admin.role_change", actor_user_id=admin.id,
                   target_type="user", target_id=user.id, ip=ip, enabled=new_admin)
 
@@ -653,7 +702,7 @@ def update_user(user_id: str, body: dict, request: Request, admin: User = Depend
 
 
 @router.post("/users/{user_id}/pin")
-def set_user_pin(user_id: str, body: dict | None = None, request: Request = None, admin: User = Depends(require_capability("people.edit")), db: OrmSession = Depends(get_db)):
+def set_user_pin(user_id: str, body: dict | None = None, request: Request = None, admin: User = Depends(require_capability("credentials.reset", allow_scoped=True)), db: OrmSession = Depends(get_db)):
     """Issue or reset a PIN. Returns the raw PIN once — it is never retrievable again.
 
     `{"clear": true}` cannot literally null the stored hash: models.py's `pin_required`
@@ -665,6 +714,8 @@ def set_user_pin(user_id: str, body: dict | None = None, request: Request = None
     # everyone, plus optional Google linking that keeps pin_hash intact) -- so issuing or
     # resetting a PIN is never blocked by auth_type here.
     user = _get_or_404(db, User, user_id, "user_not_found")
+    require_target(db, admin, "credentials.reset", user.employee)
+    protect_credential_target(db, admin, user)
 
     body = body or {}
     ip = client_ip(request) if request else None
@@ -676,6 +727,7 @@ def set_user_pin(user_id: str, body: dict | None = None, request: Request = None
         user.failed_pin_attempts = 0
         user.locked_until = None
         audit(db, action="user.pin_clear", actor_user_id=admin.id, target_type="user", target_id=user.id, ip=ip)
+        revoke_identity(db, user, reason="credential_reset", actor_id=admin.id)
         db.commit()
         return {"pin": None, "cleared": True}
 
@@ -686,13 +738,10 @@ def set_user_pin(user_id: str, body: dict | None = None, request: Request = None
         pin = f"{secrets.randbelow(1_000_000):06d}"
 
     try:
-        user.pin_hash = hash_pin(pin)
+        pin = issue_one_time_pin(db, user, pin=pin)
     except ValueError as exc:
         raise HTTPException(422, {"error": "bad_pin", "message": str(exc)})
 
-    user.pin_set_at = datetime.now(timezone.utc)
-    user.failed_pin_attempts = 0
-    user.locked_until = None
     audit(db, action="user.pin_set", actor_user_id=admin.id, target_type="user", target_id=user.id, ip=ip)
     db.commit()
     return {"pin": pin}
@@ -992,6 +1041,7 @@ def reset_account_pin(
 ):
     """Reissue a one-time must-change PIN for a functional account. Returns the PIN once."""
     user, _emp = _account_by_user_id(db, account_id)
+    protect_identity_target(db, admin, user)
     pin = issue_one_time_pin(db, user)
     audit(
         db, action="account.reset_pin", actor_user_id=admin.id, target_type="user",
@@ -1010,12 +1060,22 @@ def patch_account(
     platform_admin on satisfies models.py's no_pin_admins CHECK the same way provisioning does
     (flip to google auth, set login_email)."""
     user, emp = _account_by_user_id(db, account_id)
+    if any(k not in {"department", "label", "approval_level", "platform_admin", "is_active"} for k in body):
+        raise HTTPException(422, {"error": "unknown_fields"})
+    if any(k in body and type(body[k]) is not bool for k in ("platform_admin", "is_active")):
+        raise HTTPException(422, {"error": "invalid_boolean"})
+    if user.is_platform_admin and (body.get("platform_admin") is False or body.get("is_active") is False):
+        protected_admin_change(db, admin, user, removing=True)
     ip = client_ip(request)
     now = datetime.now(timezone.utc)
     changed: list[str] = []
 
     if "department" in body and body["department"]:
-        emp.hr_department = str(body["department"]).strip()
+        department = db.scalar(select(Department).where(Department.name == str(body["department"]).strip(), Department.is_active.is_(True)))
+        if department is None:
+            raise HTTPException(422, {"error": "invalid_department"})
+        emp.hr_department = department.name
+        emp.department_id = department.id
         changed.append("department")
     if "label" in body and body["label"]:
         emp.full_name = str(body["label"]).strip()
@@ -1064,5 +1124,7 @@ def patch_account(
         db, action="account.update", actor_user_id=admin.id, target_type="user",
         target_id=user.id, ip=ip, fields=changed,
     )
+    if changed:
+        revoke_identity(db, user, reason="account_authority_changed", actor_id=admin.id)
     db.commit()
     return _account_out(db, user, emp)

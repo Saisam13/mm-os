@@ -597,7 +597,14 @@ def run_import(
             elif r.official and user.login_email and user.login_email.lower() != r.official:
                 entry["notes"].append("signs in with a different address already; sign-in address not changed")
             if r.status == "exited" and user.is_active:
+                from .authorization import protected_admin_change, revoke_identity
+                if user.is_platform_admin:
+                    if actor is None:
+                        from fastapi import HTTPException
+                        raise HTTPException(403, {"error": "protected_admin"})
+                    protected_admin_change(db, actor, user, removing=True)
                 user.is_active = False
+                revoke_identity(db, user, reason="employee_exited", actor_id=actor.id if actor else None)
                 for s in db.scalars(select(Session).where(Session.user_id == user.id, Session.revoked_at.is_(None))):
                     s.revoked_at = now
                 changes.append({"field": "account", "from": "active", "to": "switched off (exited)"})

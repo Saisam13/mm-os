@@ -91,9 +91,13 @@ def test_management_layer_provision_grants_platform_admin_and_reaches_admin_rout
     assert head.login_email == "head1@m-mines.com"
     assert must_change_pin(db, head) is True
 
-    # The head now actually reaches an admin-only route.
+    # Temporary credentials authorize recovery only, until the holder changes them.
     client.cookies.clear()
     sign_in(head)
+    assert client.get("/api/admin/services").status_code == 403
+    pin = r.json()["provisioned"][0]["pin"]
+    changed = client.post("/api/auth/pin/change", json={"pin": pin, "new_pin": "778899"})
+    assert changed.status_code == 200, changed.text
     assert client.get("/api/admin/services").status_code == 200
 
 

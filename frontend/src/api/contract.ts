@@ -17,6 +17,7 @@ export interface MmosApi {
   getPublicServices(): Promise<PublicService[]>
   googleStartUrl(next: string): string
   signInWithPin(employee_code: string, pin: string): Promise<void>
+  changePin(pin: string, newPin: string): Promise<void>
   logout(): Promise<void>
   getMe(): Promise<Me>
   mintServiceToken(slug: string): Promise<ServiceToken>

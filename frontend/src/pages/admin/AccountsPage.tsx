@@ -190,12 +190,12 @@ function AccountDrawer({
         ) : null}
       </div>
 
-      <div className="eyebrow" style={{ margin: '22px 0 8px' }}>Management head</div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>A head gets full IT-admin-equivalent access (act + approve + see everything).</div>
+      <div className="eyebrow" style={{ margin: '22px 0 8px' }}>Platform administrator</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Controls MMOS identity and access administration. Service actions still require service permissions and workflow eligibility.</div>
       {account.is_platform_admin ? (
-        <button className="btn-q btn-danger" disabled={busy} onClick={() => patch({ platform_admin: false }, 'Head access removed.')}>Remove head access</button>
+        <button className="btn-q btn-danger" disabled={busy} onClick={() => patch({ platform_admin: false }, 'Platform administrator access removed.')}>Remove administrator access</button>
       ) : (
-        <button className="btn-q" disabled={busy} onClick={() => patch({ platform_admin: true }, 'Made management head.')}>Make management head</button>
+        <button className="btn-q" disabled={busy} onClick={() => patch({ platform_admin: true }, 'Platform administrator access assigned.')}>Make platform administrator</button>
       )}
 
       <div className="eyebrow" style={{ margin: '22px 0 8px' }}>PIN</div>

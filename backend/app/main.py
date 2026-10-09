@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .db import db_healthy
 from .embed_cors import EmbedCors
-from .middleware import NetworkGate, RequestId, SecurityHeaders
+from .middleware import NetworkGate, RequestId, SecurityHeaders, BrowserOriginGuard
 from .routers import agent, auth, me, people, platform, tokens
 from .security import jwks
 
@@ -36,6 +36,7 @@ cfg = settings()
 app = FastAPI(title="MM OS", version=cfg.version, docs_url=None, redoc_url=None)
 
 app.add_middleware(EmbedCors)
+app.add_middleware(BrowserOriginGuard)
 app.add_middleware(SecurityHeaders)
 app.add_middleware(NetworkGate)
 app.add_middleware(RequestId)
@@ -46,6 +47,8 @@ app.include_router(tokens.router, prefix="/api", tags=["tokens"])
 app.include_router(agent.router, prefix="/api/agent", tags=["agent"])
 app.include_router(people.router, prefix="/api/admin", tags=["admin"])
 app.include_router(platform.router, prefix="/api/admin", tags=["admin"])
+from .routers import activity
+app.include_router(activity.router)
 
 
 @app.exception_handler(HTTPException)

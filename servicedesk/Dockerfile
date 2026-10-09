@@ -29,4 +29,5 @@ RUN chmod +x /app/entrypoint.sh && chown -R sd:sd /app
 USER sd
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD python -c "import urllib.request,json; r=json.load(urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)); assert r['db']=='up'"
 CMD ["/app/entrypoint.sh"]

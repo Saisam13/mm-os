@@ -1,21 +1,20 @@
-// Thin fetch wrapper — same shape as servicedesk/frontend/src/api.js. Auth is a bearer
-// token, held in localStorage until the real MM OS handoff exists. No secret storage lives
-// in this file or anywhere else in this service yet — see SECURITY.md.
-const TOKEN_KEY = "pwmgr_token";
+// Production handoff uses the HttpOnly cookie. Dev tokens stay in memory.
+let devToken = null;
 
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return devToken;
 }
 export function setToken(token) {
-  localStorage.setItem(TOKEN_KEY, token);
+  devToken = token;
 }
 export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
+  devToken = null;
 }
 
 async function request(path) {
   const token = getToken();
   const res = await fetch(path, {
+    credentials: "include",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   const isJson = res.headers.get("content-type")?.includes("application/json");

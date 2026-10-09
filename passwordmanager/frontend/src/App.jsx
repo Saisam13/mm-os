@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, getToken, setToken } from "./api.js";
+import { api, setToken } from "./api.js";
 
 // Placeholder shell UI: sign in via a dev token (local dev only — see mmos.py's
 // `/_dev/token`, which 404s outside AUTH_MODE=stub), then show the authenticated
@@ -21,14 +21,13 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const handoff = params.get("mmos_token");
-    if (handoff) {
-      setToken(handoff);
+    if (params.has("mmos_token")) {
       params.delete("mmos_token");
       const clean = params.toString();
       window.history.replaceState(null, "", window.location.pathname + (clean ? "?" + clean : ""));
     }
-    if (getToken()) refresh();
+    localStorage.removeItem("pwmgr_token");
+    refresh();
   }, []);
 
   async function signIn() {

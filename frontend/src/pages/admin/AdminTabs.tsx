@@ -18,6 +18,7 @@ const TABS = [
   { to: '/admin/services', label: 'Services', any: [] },
   { to: '/admin/roles', label: 'Service roles', any: [] },
   { to: '/admin/audit', label: 'Audit', any: [] },
+  { to: '/admin/activity', label: 'Service activity', any: ['activity.view'] },
 ]
 
 export function AdminTabs() {

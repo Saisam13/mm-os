@@ -109,13 +109,16 @@ class Heartbeat:
             return False
 
     def start(self) -> None:
-        if self._thread is not None:
+        if self._thread is not None and self._thread.is_alive():
             return
+        self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True, name="mmos-heartbeat")
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=6.0)
 
     def _run(self) -> None:
         while not self._stop.is_set():

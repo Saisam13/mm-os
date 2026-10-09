@@ -51,6 +51,10 @@ function qs(params: object): string {
   return s ? `?${s}` : ''
 }
 
+export function listActivity(params: Record<string, string | number | undefined>) {
+  return req<{ events: any[]; next_offset: number | null }>(`/api/admin/activity${qs(params)}`)
+}
+
 // The real admin routers (backend/app/routers/{people,platform}.py) wrap their list
 // responses ({"employees":[...]}, {"services":[...]}, {"grants":[...]}, etc.) and keep
 // employees/users as two separate collections — reasonable on the backend (a User doesn't
@@ -65,6 +69,7 @@ export const client: MmosApi = {
   googleStartUrl: (next) => `${BASE}/api/auth/google/start?next=${encodeURIComponent(next)}`,
   signInWithPin: (employee_code, pin) =>
     req('/api/auth/pin', { method: 'POST', body: JSON.stringify({ employee_code, pin }) }),
+  changePin: (pin, new_pin) => req('/api/auth/pin/change', { method: 'POST', body: JSON.stringify({ pin, new_pin }) }),
   logout: () => req('/api/auth/logout', { method: 'POST' }),
   getMe: () => req('/api/me'),
   mintServiceToken: (slug) =>

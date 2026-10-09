@@ -1,0 +1,226 @@
+name: CI
+
+# Lint, then pytest against a real Postgres service container, then build the Docker image
+# and smoke-test it end to end (docker compose up -> GET /healthz -> GET /.well-known/jwks.json).
+#
+# Deliberately no test-count threshold and no coverage gate (per the A6 brief): most routers
+# are still stubs on the day this workflow was written, and it must keep passing as the other
+# five build agents land their own owned files into this same tree.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build-test-and-smoke:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16.15-bookworm
+        env:
+          POSTGRES_USER: mmos
+          POSTGRES_PASSWORD: ci_test_password
+          POSTGRES_DB: mmos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mmos -d mmos"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      # ── lint ──────────────────────────────────────────────────────────────────────
+      # 1. py_compile is stdlib, zero new dependencies, and cannot produce a false
+      #    positive on a stub file — it only fails on a real syntax error, which is the
+      #    one lint failure that must always be a hard stop regardless of whose file it is.
+      # 2. ruff is installed transiently (not added to requirements-dev.txt, which is
+      #    orchestrator-owned) and run with --exit-zero: informational only. A shared,
+      #    concurrently-edited tree with five other agents' in-flight stubs is not a safe
+      #    place for a style gate to hard-fail CI for everyone. See handoff/a6-infra.md
+      #    `## Assumptions`.
+      - name: Lint - syntax check (hard gate)
+        run: python -m py_compile $(find backend/app backend/tests -name '*.py')
+
+      - name: Lint - ruff (informational)
+        run: |
+          set -euo pipefail
+          pip install --quiet ruff==0.6.9
+          ruff check --exit-zero backend/app backend/tests
+
+      # ── env contract check ───────────────────────────────────────────────────────
+      # Every MMOS_ name in deploy/.env.example and deploy/docker-compose.yml must match
+      # a real field on Settings in backend/app/config.py — a mismatch here is, per the
+      # A6 brief, the single most likely way this deployment silently fails. This is a
+      # regression guard, not a one-off check: it runs on every push from here on.
+      - name: Verify MMOS_ env contract matches Settings
+        run: |
+          python - <<'PYEOF'
+          import re, sys
+          sys.path.insert(0, "backend")
+          from app.config import Settings
+
+          expected = {f"MMOS_{f.upper()}" for f in Settings.model_fields}
+
+          def names_in(path):
+              names = set()
+              for line in open(path, encoding="utf-8"):
+                  line = line.strip().lstrip("#").strip()
+                  m = re.match(r"([A-Z0-9_]+)=", line)
+                  if m and m.group(1).startswith("MMOS_"):
+                      names.add(m.group(1))
+              return names
+
+          env_names = names_in("deploy/.env.example")
+
+          compose_names = set()
+          for line in open("deploy/docker-compose.yml", encoding="utf-8"):
+              m = re.search(r"\b(MMOS_[A-Z0-9_]+):", line)
+              if m:
+                  compose_names.add(m.group(1))
+
+          unknown_env = env_names - expected
+          unknown_compose = compose_names - expected
+          missing = expected - env_names
+
+          if unknown_env or unknown_compose or missing:
+              print("MMOS_ env contract mismatch:")
+              print("  in .env.example but not in Settings:", sorted(unknown_env))
+              print("  in docker-compose.yml but not in Settings:", sorted(unknown_compose))
+              print("  in Settings but not documented in .env.example:", sorted(missing))
+              sys.exit(1)
+          print(f"OK: {len(expected)} MMOS_ settings all accounted for in deploy/.env.example")
+          PYEOF
+
+      # ── pytest against real Postgres ────────────────────────────────────────────────
+      - name: Initialize Postgres (pgcrypto + schema)
+        working-directory: backend
+        env:
+          MMOS_DATABASE_URL: postgresql+psycopg://mmos:ci_test_password@localhost:5432/mmos
+          MMOS_SIGNING_KEY_PATH: /tmp/mmos_ci_signing_key.pem
+        run: python -c "from app.db import init_db; init_db()"
+
+      - name: pytest
+        working-directory: backend
+        env:
+          MMOS_DATABASE_URL: postgresql+psycopg://mmos:ci_test_password@localhost:5432/mmos
+          MMOS_SIGNING_KEY_PATH: /tmp/mmos_ci_signing_key.pem
+          MMOS_ENVIRONMENT: test
+          MMOS_NETWORK_MODE: public
+          MMOS_COOKIE_SECURE: "false"
+          MMOS_COOKIE_DOMAIN: ""
+        run: pytest -q
+
+      - name: Shared SDK security contract
+        working-directory: packages/mmos-client-py
+        run: python -m pytest tests -q
+
+      - name: Service Desk security workflow
+        working-directory: servicedesk
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pytest tests -q
+
+      - name: Password Manager authentication shell
+        working-directory: passwordmanager
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pytest tests -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Build and audit all frontends
+        run: |
+          set -euo pipefail
+          for directory in frontend servicedesk/frontend passwordmanager/frontend; do
+            (cd "$directory" && npm ci && npm run build && npm audit --audit-level=high)
+          done
+
+      # ── build the Docker image and smoke-test it ────────────────────────────────────
+      # Runs from the repo root context, exactly as deploy/COOLIFY.md and
+      # deploy/docker-compose.yml expect. frontend/ may still be only a stub (A3's
+      # package.json has not landed at the time this workflow was written) and
+      # packages/embed/ may still be empty (A4's embed.js likewise) - deploy/Dockerfile
+      # guards both, so this must succeed either way and keep succeeding as they land.
+      - name: Prepare deploy/.env and signing key for compose
+        run: |
+          set -euo pipefail
+          cp deploy/.env.example deploy/.env
+          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci_test_password/' deploy/.env
+          sed -i 's#^MMOS_DATABASE_URL=.*#MMOS_DATABASE_URL=postgresql+psycopg://mmos:ci_test_password@localhost:5432/mmos#' deploy/.env
+          # Private ingress remains unchanged. Only the CI-local container probe is allowed.
+          sed -i 's/^MMOS_ALLOWED_CIDRS=.*/MMOS_ALLOWED_CIDRS=127.0.0.1\/32/' deploy/.env
+          scripts/gen-signing-key.sh deploy/secrets/mmos_signing_key.pem
+
+      - name: docker compose build (api image)
+        run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml build api
+
+      - name: Allow the image service user to read the CI signing key
+        run: |
+          set -euo pipefail
+          service_uid="$(docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm --no-deps --entrypoint id api -u mmos)"
+          sudo chown "$service_uid" deploy/secrets/mmos_signing_key.pem
+          chmod 600 deploy/secrets/mmos_signing_key.pem
+
+      - name: docker compose up and smoke-test /healthz + JWKS
+        run: |
+          set -euo pipefail
+          # The compose file's own `postgres` service is a second, independent Postgres
+          # from the one used for pytest above (that one is the GitHub Actions `services:`
+          # container on localhost:5432); compose's own network keeps them from colliding
+          # because the api container reaches its postgres by service name, not localhost.
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d postgres
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm api python -m alembic upgrade head
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm api python -m alembic check
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d api
+          echo "waiting for api healthcheck..."
+          for i in $(seq 1 30); do
+            status="$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose --env-file deploy/.env -f deploy/docker-compose.yml ps -q api)" 2>/dev/null || echo starting)"
+            [ "$status" = "healthy" ] && break
+            sleep 3
+          done
+          if [ "$status" != "healthy" ]; then
+            echo "api never became healthy" >&2
+            docker compose --env-file deploy/.env -f deploy/docker-compose.yml logs api
+            exit 1
+          fi
+          # API port 8000 is intentionally not published on the host. Probe inside it.
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml exec -T api python - <<'PYEOF'
+          import json
+          import urllib.request
+          from sqlalchemy import text
+          from app.db import engine
+          for path in ('/healthz', '/.well-known/jwks.json'):
+              with urllib.request.urlopen('http://127.0.0.1:8000' + path, timeout=5) as response:
+                  payload = json.load(response)
+              if path == '/healthz':
+                  assert payload.get('ok') is True and payload.get('db') == 'up'
+              else:
+                  assert any(key.get('kty') == 'RSA' for key in payload.get('keys', []))
+              print(path + ': passed')
+          with engine.connect() as connection:
+              assert connection.execute(text('SELECT version_num FROM alembic_version')).scalars().all() == ['0010']
+          print('Migration head: 0010')
+          PYEOF
+
+      - name: docker compose down
+        if: always()
+        run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml down -v

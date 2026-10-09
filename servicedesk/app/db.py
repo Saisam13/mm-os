@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import settings
+from fastapi import Request
 
 _cfg = settings()
 
@@ -29,8 +30,9 @@ def _sqlite_fk_pragma(dbapi_connection, _record) -> None:  # pragma: no cover - 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db(request: Request) -> Generator[Session, None, None]:
     db = SessionLocal()
+    db.info["activity_request"] = request
     try:
         yield db
     finally:

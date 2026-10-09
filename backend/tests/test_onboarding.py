@@ -11,13 +11,13 @@ from app import models
 from app.config import settings
 from app.departments import UNASSIGNED
 from app.onboarding import PersonalEmail
-from tests.test_identity import _default_claims, _id_token, _patch_google, _start_google_login, google_key  # noqa: F401
+from tests.test_identity import _default_claims, _login_nonce, _id_token, _patch_google, _start_google_login, google_key  # noqa: F401
 
 
 def _google_login(client, monkeypatch, google_key, **claims):
     pem, jwk = google_key
     state = _start_google_login(client)
-    _patch_google(monkeypatch, jwk, _id_token(pem, jwk["kid"], **_default_claims(**claims)))
+    _patch_google(monkeypatch, jwk, _id_token(pem, jwk["kid"], **_default_claims(nonce=_login_nonce(client), **claims)))
     return client.get("/api/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False)
 
 
@@ -34,7 +34,7 @@ def lowest(db, make_service):
 # ── official email: signed in, then asked once for code + PIN ──────────────────
 def test_official_email_signs_in_then_needs_onboarding(client, monkeypatch, google_key, db, make_employee, make_user):
     emp = make_employee(employee_code="MM115", work_email="fake.person@m-mines.com")
-    user = make_user(employee=emp, login_email="fake.person@m-mines.com")
+    user = make_user(pin_set_at=None, employee=emp, login_email="fake.person@m-mines.com")
 
     resp = _google_login(client, monkeypatch, google_key, email="fake.person@m-mines.com")
     assert resp.status_code == 302 and settings().cookie_name in resp.cookies
@@ -56,7 +56,7 @@ def test_official_email_signs_in_then_needs_onboarding(client, monkeypatch, goog
 
 def test_non_mm_code_still_matches_as_typed(client, monkeypatch, google_key, db, make_employee, make_user):
     emp = make_employee(employee_code="MM-ITADMIN", work_email="it.person@m-mines.com")
-    make_user(employee=emp, login_email="it.person@m-mines.com")
+    make_user(pin_set_at=None, employee=emp, login_email="it.person@m-mines.com")
     _google_login(client, monkeypatch, google_key, email="it.person@m-mines.com")
     assert client.post("/api/auth/onboard", json={"employee_code": "mm-itadmin", "pin": "5555"}).status_code == 200
 
@@ -66,7 +66,7 @@ def test_listed_personal_gmail_needs_the_right_code_then_signs_in_directly(
     client, monkeypatch, google_key, db, make_employee, make_user
 ):
     emp = make_employee(employee_code="MM77", work_email="own.name@m-mines.com")
-    user = make_user(employee=emp, login_email="own.name@m-mines.com")
+    user = make_user(pin_set_at=None, employee=emp, login_email="own.name@m-mines.com")
     db.add(PersonalEmail(email="own.name@gmail.com", user_id=user.id))
     db.commit()
 
@@ -94,7 +94,7 @@ def test_listed_personal_gmail_needs_the_right_code_then_signs_in_directly(
 
 def test_personal_gmail_cannot_overwrite_an_existing_pin(client, monkeypatch, google_key, db, make_employee, make_user):
     emp = make_employee(employee_code="MM78", work_email="pin.holder@m-mines.com")
-    user = make_user(employee=emp, login_email="pin.holder@m-mines.com")
+    user = make_user(pin_set_at=None, employee=emp, login_email="pin.holder@m-mines.com")
     from app.security import hash_pin
     user.pin_hash, user.pin_set_at = hash_pin("1357"), datetime.now(timezone.utc)
     db.add(PersonalEmail(email="pin.holder@gmail.com", user_id=user.id))
@@ -133,7 +133,7 @@ def test_unknown_company_address_cannot_claim_someone_elses_code(
     client, monkeypatch, google_key, db, make_employee, make_user, lowest
 ):
     taken = make_employee(employee_code="MM55", work_email="real.owner@m-mines.com")
-    make_user(employee=taken, login_email="real.owner@m-mines.com")
+    make_user(pin_set_at=None, employee=taken, login_email="real.owner@m-mines.com")
     _google_login(client, monkeypatch, google_key, email="imposter@m-mines.com")
     resp = client.post("/api/auth/onboard", json={"employee_code": "MM55", "pin": "1111"})
     assert resp.status_code == 409 and resp.json()["error"] == "code_taken"
@@ -150,11 +150,11 @@ def test_onboard_without_google_or_session_is_refused(client):
 def test_me_lists_own_and_department_mailboxes(client, db, make_employee, make_user, sign_in):
     from app.provision import FUNCTIONAL_JOB_TITLE
     emp = make_employee(hr_department="Purchase", work_email="a.buyer@m-mines.com")
-    user = make_user(employee=emp)
+    user = make_user(pin_set_at=None, employee=emp)
     box = make_employee(hr_department="Purchase", work_email="purchase.c9@m-mines.com", job_title=FUNCTIONAL_JOB_TITLE)
-    make_user(employee=box)
+    make_user(pin_set_at=None, employee=box)
     other = make_employee(hr_department="Finance", work_email="finance.box@m-mines.com", job_title=FUNCTIONAL_JOB_TITLE)
-    make_user(employee=other)
+    make_user(pin_set_at=None, employee=other)
     sign_in(user)
     mail = client.get("/api/me").json()["mail"]
     assert [(m["kind"], m["email"]) for m in mail] == [("own", "a.buyer@m-mines.com"), ("department", "purchase.c9@m-mines.com")]

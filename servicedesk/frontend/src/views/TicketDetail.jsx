@@ -160,6 +160,7 @@ export default function TicketDetail({ ticketId, me, onBack }) {
           {proposals.map((p) => (
             <div key={p.id} className="card" style={{ padding: 14, marginBottom: 10 }}>
               <p className="cond" style={{ color: "var(--text-3)" }}>version {p.version}</p>
+              <p className="meta cond">{p.author_name || p.author_code || p.author_sub}{p.author_name && p.author_code ? ` · ${p.author_code}` : ""}</p>
               <p>{p.scope_summary}</p>
               <p>{p.effort_days ?? "—"} days · <code>{JSON.stringify(p.resources)}</code></p>
               <p><strong>Alternatives:</strong> {p.alternatives}</p>
@@ -193,7 +194,7 @@ export default function TicketDetail({ ticketId, me, onBack }) {
       <p className="section-title">Comments</p>
       {comments.map((c) => (
         <div key={c.id} className={`comment${c.is_internal ? " internal" : ""}`}>
-          <p className="meta cond">{c.author_sub}{c.is_internal ? " · internal" : ""}</p>
+          <p className="meta cond">{c.author_name || c.author_code || c.author_sub}{c.author_name && c.author_code ? ` · ${c.author_code}` : ""}{!c.author_name && !c.author_code ? " · legacy identity" : ""}{c.is_internal ? " · internal" : ""}</p>
           <p>{c.body}</p>
         </div>
       ))}
@@ -213,7 +214,7 @@ export default function TicketDetail({ ticketId, me, onBack }) {
       {events.map((e) => (
         <div key={e.id} className="event-row">
           <time>{new Date(e.created_at).toLocaleString()}</time>
-          <span>{e.from_status ? `${e.from_status} -> ${e.to_status}` : `created (${e.to_status})`}</span>
+          <span>{e.actor_name || e.actor_code || e.actor_sub || "Unknown legacy actor"}{e.actor_name && e.actor_code ? ` · ${e.actor_code}` : ""}: {e.detail?.action === "assigned" ? "changed assignment" : e.from_status ? `${e.from_status} -> ${e.to_status}` : `created (${e.to_status})`}</span>
         </div>
       ))}
     </main>

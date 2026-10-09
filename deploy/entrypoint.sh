@@ -39,4 +39,4 @@ fi
 echo "[boot] starting uvicorn"
 # Horizontal scaling is safe (BE-6): rate-limit state is shared in Postgres (app/ratelimit.py),
 # not in-process, so raising --workers or running replicas is no longer forbidden. Default 1 worker.
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers

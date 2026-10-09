@@ -34,12 +34,12 @@ def test_production_with_stub_auth_refuses_to_boot():
     assert "AUTH_MODE" in result.stderr
 
 
-def test_production_with_stub_auth_and_explicit_override_boots():
+def test_production_with_stub_auth_cannot_override_guard():
     result = _run({
         "ENVIRONMENT": "production", "AUTH_MODE": "stub", "DEV_SECRET": "x",
         "PWMGR_ALLOW_STUB_IN_PROD": "1",
     })
-    assert result.returncode == 0, result.stderr
+    assert result.returncode != 0 and "refuses to start" in result.stderr
 
 
 def test_development_with_stub_auth_boots():

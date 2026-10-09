@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..mmos_seam import CurrentUser, get_current_user
+from ..mmos_seam import CurrentUser, get_current_user, allows
 from ..models import Comment, Ticket
 from ..privacy import can_see_full
 from ..schemas import CommentCreate, CommentOut
@@ -21,7 +21,7 @@ router = APIRouter(tags=["comments"])
 
 def _is_agent(user: CurrentUser) -> bool:
     # No `platform_admin` bypass -- see app/routers/tickets.py's twin of this function.
-    return "agent" in user.roles or "admin" in user.roles
+    return allows(user, "comment.internal")
 
 
 @router.post("/tickets/{ticket_id}/comments", response_model=CommentOut, status_code=201)

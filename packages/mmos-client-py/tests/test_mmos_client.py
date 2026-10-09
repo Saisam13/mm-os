@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 
 from mmos_client import MMOS, CurrentUser, TokenError, llm_guard, report_usage, require_role
 from mmos_client.core import DEFAULT_ISSUER
@@ -361,7 +361,7 @@ def test_accept_and_session_cookie_flow(keypair, stub):
     app = _build_app(mmos)
     # https scheme: the cookie is Set-Cookie'd with Secure, exactly as it is against a real
     # MM OS deployment, so the client jar must see an https request to send it back.
-    client = TestClient(app, base_url="https://testserver")
+    client = TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"})
 
     accept = client.get("/_mmos/accept")
     assert accept.status_code == 200
@@ -390,6 +390,8 @@ def test_health_endpoint(stub):
     assert resp.status_code == 200
     assert resp.json() == {
         "ok": True,
+        "authority_age_seconds": None,
+        "persistent_trust_cache": False,
         "slug": SLUG,
         "version": "9.9.9",
         "os": {"reachable": True, "url": ISSUER, "issuer": ISSUER, "error": None},
@@ -442,7 +444,7 @@ def test_session_cookie_can_survive_mm_os_iframe(stub, keypair):
     there, so the session would be set and then ignored on the next request."""
     pem, _, _ = keypair
     mmos = make_mmos(stub)
-    client = TestClient(_build_app(mmos))
+    client = TestClient(_build_app(mmos), headers={"Origin": "http://testserver"})
 
     resp = client.post("/_mmos/session", json={"token": mint(pem)})
     assert resp.status_code == 200

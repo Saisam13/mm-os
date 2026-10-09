@@ -117,6 +117,8 @@ def _sqlite_pragmas(dbapi_conn, _record):
     reads exactly like a flaky test. WAL lets the reader proceed against the last committed
     snapshot instead of waiting.
     """
+    if engine.dialect.name != "sqlite":
+        return
     cur = dbapi_conn.cursor()
     cur.execute("PRAGMA journal_mode=WAL")
     cur.execute("PRAGMA busy_timeout=15000")
@@ -161,7 +163,7 @@ def client(db):
     from fastapi.testclient import TestClient
 
     app.dependency_overrides[get_db] = lambda: db
-    with TestClient(app) as c:
+    with TestClient(app, headers={"Origin": "http://testserver"}, client=("127.0.0.1", 1234)) as c:
         yield c
     app.dependency_overrides.clear()
 
@@ -193,6 +195,8 @@ def make_user(db, make_employee):
     def _make(employee=None, **kw):
         employee = employee or make_employee()
         auth_type = kw.pop("auth_type", "google")
+        # Factory callers normally model completed accounts. Onboarding tests opt out.
+        kw.setdefault("pin_set_at", datetime.now(timezone.utc))
         # models.py enforces: google users must have login_email, PIN users must have pin_hash.
         if auth_type == "google":
             kw.setdefault("login_email", employee.work_email)
@@ -251,6 +255,7 @@ def sign_in(db, client):
         row = models.Session(
             user_id=user.id,
             token_hash=token_hash,
+            auth_method="google",
             expires_at=session_expiry(),
         )
         db.add(row)

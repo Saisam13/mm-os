@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import logging
 import secrets
 import time
@@ -47,14 +48,16 @@ import uuid
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError as JWTError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..config import settings
 from ..db import get_db
 from ..departments import UNASSIGNED, normalize_code
-from ..deps import audit, client_ip, current_session, current_user
+from ..deps import audit, client_ip, current_session, current_user, authenticated_user
+from ..authorization import revoke_identity
 from ..models import Employee, Session, User
 from ..onboarding import PersonalEmail, grant_lowest_roles, needs_onboarding
 from ..provision import clear_must_change, label_from_email, must_change_pin
@@ -105,7 +108,7 @@ def _oauth_secret() -> bytes:
 
 
 def _sign_oauth_cookie(payload: str) -> str:
-    mac = hashlib.sha256(_oauth_secret() + payload.encode()).hexdigest()
+    mac = hmac.new(_oauth_secret(), payload.encode(), hashlib.sha256).hexdigest()
     return base64.urlsafe_b64encode(payload.encode()).decode() + "." + mac
 
 
@@ -115,18 +118,19 @@ def _read_oauth_cookie(raw: str) -> dict | None:
         payload = base64.urlsafe_b64decode(body_b64.encode()).decode()
     except (ValueError, UnicodeDecodeError, base64.binascii.Error):
         return None
-    expected = hashlib.sha256(_oauth_secret() + payload.encode()).hexdigest()
+    expected = hmac.new(_oauth_secret(), payload.encode(), hashlib.sha256).hexdigest()
     if not secrets.compare_digest(mac, expected):
         return None
     return dict(parse_qsl(payload))
 
 
 def _make_oauth_cookie(
-    *, state: str, code_verifier: str, next_path: str, purpose: str = "login", linking_user_id=None
+    *, state: str, code_verifier: str, next_path: str, nonce: str, purpose: str = "login", linking_user_id=None
 ) -> str:
     exp = int(time.time()) + OAUTH_COOKIE_TTL_SECONDS
     fields = {
         "state": state,
+        "nonce": nonce,
         "code_verifier": code_verifier,
         "next": next_path,
         "exp": str(exp),
@@ -145,7 +149,8 @@ def _pkce_pair() -> tuple[str, str]:
 
 def _safe_next(next_: str | None) -> str:
     """Only ever redirect somewhere inside our own shell -- never an open redirect."""
-    if next_ and next_.startswith("/") and not next_.startswith("//"):
+    if (next_ and next_.startswith("/") and not next_.startswith("//")
+            and "\\" not in next_ and not any(ord(c) < 32 or ord(c) == 127 for c in next_)):
         return next_
     return "/"
 
@@ -185,12 +190,13 @@ def _clear_oauth_cookie(response) -> None:
     response.delete_cookie(OAUTH_COOKIE_NAME, path="/", domain=settings().cookie_domain or None)
 
 
-def _issue_session(db: OrmSession, user: User, request: Request) -> str:
+def _issue_session(db: OrmSession, user: User, request: Request, *, auth_method: str = "google") -> str:
     raw, token_hash = new_session_token()
     db.add(
         Session(
             user_id=user.id,
             token_hash=token_hash,
+            auth_method=auth_method,
             ip=client_ip(request),
             user_agent=request.headers.get("user-agent"),
             expires_at=session_expiry(),
@@ -212,6 +218,7 @@ def google_start(request: Request, next: str = "/"):
     cfg = settings()
     next_path = _safe_next(next)
     state = secrets.token_urlsafe(24)
+    nonce = secrets.token_urlsafe(32)
     code_verifier, code_challenge = _pkce_pair()
 
     params = {
@@ -220,6 +227,7 @@ def google_start(request: Request, next: str = "/"):
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
+        "nonce": nonce,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
         # No `hd` hint (25 Sep 2026): it narrows Google's account chooser to company accounts,
@@ -228,7 +236,7 @@ def google_start(request: Request, next: str = "/"):
         "prompt": "select_account",
     }
     resp = RedirectResponse(f"{GOOGLE_AUTH_URL}?{urlencode(params)}", status_code=302)
-    cookie_val = _make_oauth_cookie(state=state, code_verifier=code_verifier, next_path=next_path, purpose="login")
+    cookie_val = _make_oauth_cookie(state=state, code_verifier=code_verifier, nonce=nonce, next_path=next_path, purpose="login")
     _set_oauth_cookie(resp, cookie_val)
     return resp
 
@@ -241,6 +249,7 @@ def google_link_start(request: Request, next: str = "/", user: User = Depends(cu
     cfg = settings()
     next_path = _safe_next(next)
     state = secrets.token_urlsafe(24)
+    nonce = secrets.token_urlsafe(32)
     code_verifier, code_challenge = _pkce_pair()
 
     params = {
@@ -249,13 +258,14 @@ def google_link_start(request: Request, next: str = "/", user: User = Depends(cu
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
+        "nonce": nonce,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
         "prompt": "select_account",
     }
     resp = RedirectResponse(f"{GOOGLE_AUTH_URL}?{urlencode(params)}", status_code=302)
     cookie_val = _make_oauth_cookie(
-        state=state, code_verifier=code_verifier, next_path=next_path, purpose="link", linking_user_id=user.id
+        state=state, code_verifier=code_verifier, nonce=nonce, next_path=next_path, purpose="link", linking_user_id=user.id
     )
     _set_oauth_cookie(resp, cookie_val)
     return resp
@@ -315,19 +325,25 @@ def _fetch_google_claims(code: str, code_verifier: str) -> dict:
     try:
         claims = jwt.decode(
             id_token,
-            key,
+            jwt.PyJWK.from_dict(key, algorithm="RS256"),
             algorithms=["RS256"],
             audience=cfg.google_client_id,
             issuer=list(GOOGLE_ISSUERS),
-            access_token=access_token,
-            options={"leeway": cfg.clock_skew_seconds},
+            leeway=cfg.clock_skew_seconds,
+            options={"require": ["iss", "aud", "exp", "iat", "sub"]},
         )
     except JWTError as exc:
         log.error("Google id_token verification failed: %s", exc)
         raise _AuthDenied("invalid_token", "Could not verify Google sign-in.")
 
     # aud, iss, exp are enforced by jwt.decode above.
-    if not claims.get("email_verified"):
+    if claims.get("at_hash"):
+        if not isinstance(access_token, str):
+            raise _AuthDenied("invalid_token", "Could not verify Google sign-in.")
+        expected = base64.urlsafe_b64encode(hashlib.sha256(access_token.encode()).digest()[:16]).rstrip(b"=").decode()
+        if not isinstance(claims["at_hash"], str) or not hmac.compare_digest(claims["at_hash"], expected):
+            raise _AuthDenied("invalid_token", "Could not verify Google sign-in.")
+    if claims.get("email_verified") is not True:
         raise _AuthDenied("email_not_verified", "Your Google email is not verified.")
     return claims
 
@@ -400,7 +416,7 @@ def _complete_google_login(request: Request, db: OrmSession, fields: dict, claim
         db.commit()
         return _to_welcome(fields, mode="new", email=email, name=claims.get("name"))
 
-    if not user.is_active:
+    if not user.is_active or user.employee.status != "active":
         # Same generic signal as "no such email" -- never confirms a deactivated account exists.
         audit(db, action="login.google.denied", ip=ip, reason="unknown_user", email=email)
         db.commit()
@@ -425,7 +441,7 @@ def _complete_google_link(request: Request, db: OrmSession, fields: dict, claims
     """
     try:
         sess = current_session(request, db)
-        user = current_user(sess, db)
+        user = current_user(authenticated_user(sess, db), db, sess)
     except HTTPException:
         audit(db, action="login.google.denied", ip=ip, reason="link_session_expired")
         db.commit()
@@ -469,6 +485,8 @@ def google_callback(request: Request, code: str | None = None, state: str | None
 
     try:
         claims = _fetch_google_claims(code, fields["code_verifier"])
+        if not fields.get("nonce") or not isinstance(claims.get("nonce"), str) or not hmac.compare_digest(fields["nonce"], claims["nonce"]):
+            raise _AuthDenied("invalid_nonce", "Sign-in expired. Please try again.")
     except _AuthDenied as exc:
         audit(db, action="login.google.denied", ip=ip, reason=exc.code)
         db.commit()
@@ -499,7 +517,7 @@ def pin_login(request: Request, body: dict, db: OrmSession = Depends(get_db)):
     pin = str(body.get("pin") or "")
 
     user = db.scalar(
-        select(User).join(Employee, User.employee_id == Employee.id).where(Employee.employee_code == employee_code)
+        select(User).join(Employee, User.employee_id == Employee.id).where(Employee.employee_code == employee_code).with_for_update(of=User).execution_options(populate_existing=True)
     )
     if user is None:
         audit(db, action="login.pin.failed", ip=ip, reason="unknown_code", employee_code=employee_code)
@@ -507,6 +525,10 @@ def pin_login(request: Request, body: dict, db: OrmSession = Depends(get_db)):
         raise HTTPException(401, GENERIC_PIN_ERROR)
 
     now = datetime.now(timezone.utc)
+    if user.is_platform_admin:
+        audit(db, action="login.pin.failed", actor_user_id=user.id, ip=ip, reason="admin_pin_disabled")
+        db.commit()
+        raise HTTPException(401, GENERIC_PIN_ERROR)
     if user.locked_until and user.locked_until <= now:
         user.failed_pin_attempts = 0
         user.locked_until = None
@@ -523,7 +545,7 @@ def pin_login(request: Request, body: dict, db: OrmSession = Depends(get_db)):
     # issued a real PIN yet" signal (see routers/people.py), not a login precondition --
     # an unissued PIN is an unguessable placeholder hash that verify_pin() will already
     # never match against anything a person actually types.
-    ok = bool(user.is_active and user.pin_hash and verify_pin(pin, user.pin_hash))
+    ok = bool(user.is_active and user.employee.status == "active" and user.pin_hash and verify_pin(pin, user.pin_hash))
     if not ok:
         user.failed_pin_attempts += 1
         if user.failed_pin_attempts >= cfg.pin_max_attempts:
@@ -534,7 +556,7 @@ def pin_login(request: Request, body: dict, db: OrmSession = Depends(get_db)):
 
     user.failed_pin_attempts = 0
     user.locked_until = None
-    raw = _issue_session(db, user, request)
+    raw = _issue_session(db, user, request, auth_method="pin")
     audit(db, action="login.pin", actor_user_id=user.id, ip=ip)
     db.commit()
 
@@ -550,7 +572,7 @@ def pin_login(request: Request, body: dict, db: OrmSession = Depends(get_db)):
 def change_pin(
     body: dict,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(authenticated_user),
     db: OrmSession = Depends(get_db),
 ):
     """Change your own PIN. Requires the current PIN as proof (a live session cookie alone is
@@ -560,8 +582,21 @@ def change_pin(
     ip = client_ip(request)
     current = str(body.get("pin") or "")
     new_pin = str(body.get("new_pin") or "")
+    if check_rate_limit(db, bucket=f"pin-change:{user.id}", limit=_PIN_RATE_LIMIT, window_seconds=_PIN_RATE_WINDOW_SECONDS):
+        raise HTTPException(429, {"error": "rate_limited"})
+    # The limiter commits its own transaction. Acquire the row lock afterwards.
+    user = db.scalar(select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True))
+    now = datetime.now(timezone.utc)
+    if user.locked_until and user.locked_until > now:
+        raise HTTPException(401, {"error": "invalid_credentials"})
+    if user.locked_until and user.locked_until <= now:
+        user.failed_pin_attempts = 0
+        user.locked_until = None
 
     if not (user.pin_hash and verify_pin(current, user.pin_hash)):
+        user.failed_pin_attempts += 1
+        if user.failed_pin_attempts >= settings().pin_max_attempts:
+            user.locked_until = now + timedelta(minutes=settings().pin_lockout_minutes)
         audit(db, action="pin.change.failed", actor_user_id=user.id, ip=ip, reason="bad_current_pin")
         db.commit()
         raise HTTPException(401, {"error": "invalid_credentials", "message": "Current PIN is incorrect."})
@@ -578,6 +613,8 @@ def change_pin(
     user.failed_pin_attempts = 0
     user.locked_until = None
     clear_must_change(db, user)
+    revoke_identity(db, user, reason="credential_changed", actor_id=user.id,
+                    keep_session_id=current_session(request, db).id)
     audit(db, action="pin.change", actor_user_id=user.id, ip=ip)
     db.commit()
     return {"ok": True, "must_change": False}
@@ -586,7 +623,7 @@ def change_pin(
 # -- first sign-in: confirm the employee code, set a PIN -------------------------
 def _session_user(request: Request, db: OrmSession) -> User | None:
     try:
-        return current_user(current_session(request, db), db)
+        return authenticated_user(current_session(request, db), db)
     except HTTPException:
         return None
 

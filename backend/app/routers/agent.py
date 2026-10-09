@@ -21,7 +21,7 @@ from sqlalchemy import func, or_, select
 
 from ..config import settings
 from ..db import SessionLocal, get_db
-from ..deps import audit, client_ip, require_service_key
+from ..deps import audit, client_ip, require_service_key, require_revocation_key
 from ..llm_control import (
     LlmFeature,
     feature_policy_dict,
@@ -115,13 +115,15 @@ def _poll_after_seconds(db, service: Service) -> int:
 
 @router.get("/revocations")
 def revocations(
-    since: datetime = Query(...),
-    service: Service = Depends(require_service_key),
+    since: datetime | None = Query(None),
+    service: Service = Depends(require_revocation_key),
     db=Depends(get_db),
 ):
     rows = db.scalars(
         select(Revocation).where(
-            Revocation.revoked_at > since,
+            # A wall-clock watermark can skip a transaction committed after a feed read.
+            # Return the retained snapshot on every poll; `since` is a legacy hint only.
+            Revocation.purge_after > datetime.now(timezone.utc),
             or_(Revocation.service_id == service.id, Revocation.service_id.is_(None)),
         )
     ).all()
@@ -137,6 +139,8 @@ def revocations(
             )
 
     return {
+        "snapshot": True,
+        "service_active": service.is_active,
         "now": datetime.now(timezone.utc).isoformat(),
         "poll_after_seconds": _poll_after_seconds(db, service),
         "revoked_subjects": revoked_subjects,

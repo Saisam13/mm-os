@@ -20,8 +20,8 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
-from jose import jwt
-from jose.exceptions import JWTError
+import jwt
+from jwt.exceptions import PyJWTError as JWTError
 
 from app import security
 from app.config import settings
@@ -51,11 +51,11 @@ def verify_as_service(
 
     claims = jwt.decode(
         token,
-        key,
+        jwt.PyJWK.from_dict(key, algorithm="RS256"),
         algorithms=["RS256"],
         audience=aud,
         issuer=issuer,
-        options={"require_iat": True, "require_exp": True},
+        options={"require": ["iat", "exp"]},
     )
 
     if claims.get("sub") in denylist_subjects:
@@ -145,7 +145,7 @@ def test_unknown_kid_rejected(make_employee, make_user):
     """A client library must refuse a `kid` it does not have cached, before it ever
     attempts a signature check — otherwise an attacker just needs any RSA key."""
     token, *_ = _mint(make_employee, make_user)
-    claims = jwt.get_unverified_claims(token)
+    claims = jwt.decode(token, options={'verify_signature': False})
 
     throwaway = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     throwaway_pem = throwaway.private_bytes(
@@ -165,7 +165,7 @@ def test_alg_none_rejected(make_employee, make_user):
     claims the token needs none. Hand-built so the test does not depend on whether the
     JWT library even lets you *encode* with alg=none."""
     token, *_ = _mint(make_employee, make_user)
-    claims = jwt.get_unverified_claims(token)
+    claims = jwt.decode(token, options={'verify_signature': False})
     header = jwt.get_unverified_header(token)
 
     none_token = f"{_b64u_json({'alg': 'none', 'typ': 'JWT', 'kid': header['kid']})}.{_b64u_json(claims)}."
@@ -180,7 +180,7 @@ def test_hs256_confusion_rejected(make_employee, make_user):
     HMAC secret. A verifier that pins `algorithms=["RS256"]` refuses this outright; one
     that trusts the token's own `alg` header would be fooled."""
     token, *_ = _mint(make_employee, make_user)
-    claims = jwt.get_unverified_claims(token)
+    claims = jwt.decode(token, options={'verify_signature': False})
     header = jwt.get_unverified_header(token)
     jwks_doc = security.jwks()
 

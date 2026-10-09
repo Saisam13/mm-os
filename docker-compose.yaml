@@ -1,19 +1,19 @@
-# Coolify deployment for the hosted demo. NOT the production topology.
+# Coolify root deployment for the next controlled MMOS release.
+# The explicitly named demo variant is deploy/docker-compose.coolify.yml.
 #
 # Lives at the repo ROOT on purpose: Coolify runs compose from the repository root, so a
 # `context: ..` relative to deploy/ resolved outside the checkout and the deploy failed
 # within seconds. Paths here are all root-relative.
 #
-# Differences from deploy/docker-compose.yml, all deliberate and all temporary:
+# This topology preserves existing named database and signing-key volumes.
 #
 #  * No `secrets:` block. The production compose mounts the RSA signing key as a secret file
 #    that is gitignored and therefore absent on a fresh clone, which would fail the deploy.
-#    Here MMOS_SIGNING_KEY_PATH points into a persistent volume and app/security.py generates
-#    the key on first boot, then reuses it. Still a file, never an env var.
-#  * `command:` runs deploy/entrypoint.sh, which applies migrations (and optionally seeds)
-#    before serving. Production keeps that an operator step.
-#  * MMOS_NETWORK_MODE=public. The design is VPN-only with a CIDR allowlist; the demo has to
-#    be reachable from anywhere. THIS MUST GO BACK TO `private` AFTER THE DEMO.
+#    Here MMOS_SIGNING_KEY_PATH points into the existing persistent volume. Production
+#    requires that key to exist already; it never silently generates a replacement.
+#  * Schema migration is a separate operator step. Startup never seeds demo accounts.
+#  * Private access is the default. Reconcile actual ingress, VPN and proxy peer CIDRs
+#    before deploying so a configuration change does not lock out legitimate users.
 #
 # Set in Coolify's environment, not here: POSTGRES_PASSWORD, MMOS_ISSUER, MMOS_COOKIE_DOMAIN.
 services:
@@ -45,36 +45,30 @@ services:
     environment:
       SERVICE_FQDN_API_8000: ${SERVICE_FQDN_API_8000:-}
       MMOS_DATABASE_URL: postgresql+psycopg://mmos:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the Coolify environment}@postgres:5432/mmos
-      MMOS_NETWORK_MODE: "public"
+      MMOS_NETWORK_MODE: "${MMOS_NETWORK_MODE:-private}"
+      MMOS_ALLOWED_CIDRS: "${MMOS_ALLOWED_CIDRS:-10.8.0.0/24,127.0.0.1/32}"
+      MMOS_TRUSTED_PROXY_COUNT: "${MMOS_TRUSTED_PROXY_COUNT:-1}"
+      MMOS_TRUSTED_PROXY_CIDRS: "${MMOS_TRUSTED_PROXY_CIDRS:-127.0.0.1/32,::1/128}"
       MMOS_SIGNING_KEY_PATH: /data/mmos_signing_key.pem
-      MMOS_SEED_ON_BOOT: "true"
-      MMOS_ENVIRONMENT: "demo"
-      MMOS_COOKIE_SECURE: "${MMOS_COOKIE_SECURE:-false}"
+      MMOS_SEED_ON_BOOT: "false"
+      MMOS_ENVIRONMENT: "production"
+      MMOS_VERSION: "${MMOS_VERSION:?set a unique release identifier}"
+      MMOS_COOKIE_SECURE: "true"
       MMOS_COOKIE_DOMAIN: "${MMOS_COOKIE_DOMAIN:-}"
-      MMOS_ISSUER: "${MMOS_ISSUER:-http://localhost:8000}"
+      MMOS_ISSUER: "${MMOS_ISSUER:?preserve the current token issuer}"
+      MMOS_PUBLIC_URL: "${MMOS_PUBLIC_URL:?set the actual HTTPS MMOS website origin}"
     volumes:
       - mmos_keydata:/data
-    # Inlined rather than a script file: deploy/ is excluded from the build context by
-    # .dockerignore, so /app/deploy/entrypoint.sh does not exist inside the image. Migrations
-    # run on boot because a hosted demo has no operator at a terminal; production keeps
-    # `alembic upgrade head` a deliberate separate step.
+    # Migrate the backed-up database before replacing the API container. Startup does
+    # not mutate schema or registry records. The image entrypoint drops root privileges.
     command:
       - sh
       - -c
       - |
         set -eu
-        echo "[boot] alembic upgrade head"
-        python -m alembic upgrade head
-        if [ "${MMOS_SEED_ON_BOOT:-false}" = "true" ]; then
-          echo "[boot] seeding from the committed demo fixture (idempotent)"
-          python -m app.seed --demo || echo "[boot] seed reported a problem; starting the API anyway"
-        fi
-        echo "[boot] starting uvicorn"
-        # Horizontal scaling is now SAFE (BE-6): the rate-limit state that once forced
-        # `--workers 1` is shared across all workers/replicas via the `rate_limits` table in
-        # Postgres (app/ratelimit.py). Left at uvicorn's default (1 worker); raising --workers
-        # or adding replicas is no longer forbidden. See docs/10-runbook.md §16.
-        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+        export MMOS_MIGRATE_ON_BOOT=false
+        export MMOS_SEED_ON_BOOT=false
+        exec /app/entrypoint.sh
     expose:
       - "8000"
     healthcheck:
