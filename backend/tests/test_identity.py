@@ -15,6 +15,7 @@ import base64
 import os
 import subprocess
 import sys
+from functools import partial
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -325,7 +326,14 @@ def test_pin_login_success_and_generic_error_for_wrong_code(client, db, make_emp
 # a time — without a per-IP limit, a single caller could walk every employee code with
 # junk PINs and lock all 73 accounts out within seconds. See routers/auth.py's
 # _pin_rate_limited, which mirrors routers/tokens.py's in-process limiter (60/min).
-def test_pin_route_throttles_a_burst_from_one_ip(client, make_employee, make_user):
+@pytest.fixture
+def fixed_pin_window(monkeypatch):
+    # A burst must remain in one fixed window even if CI crosses a minute boundary.
+    # Separate limiter tests exercise window rollover with explicit timestamps.
+    monkeypatch.setattr(auth_module, "check_rate_limit", partial(auth_module.check_rate_limit, now=1_800_000_030.0))
+
+
+def test_pin_route_throttles_a_burst_from_one_ip(client, make_employee, make_user, fixed_pin_window):
     employee = make_employee()
     make_user(employee=employee, auth_type="local_pin", pin="1234")
     headers = {"X-Forwarded-For": "203.0.113.5"}
@@ -339,7 +347,7 @@ def test_pin_route_throttles_a_burst_from_one_ip(client, make_employee, make_use
     assert throttled.json()["error"] == "rate_limited"
 
 
-def test_throttled_pin_attempt_does_not_count_toward_lockout(client, db, make_employee, make_user):
+def test_throttled_pin_attempt_does_not_count_toward_lockout(client, db, make_employee, make_user, fixed_pin_window):
     # Exhaust the per-IP budget against an unrelated code first, so the account under test
     # (`victim`) never has a single real attempt processed against it — proving a
     # throttled request truly never reaches (and never increments) failed_pin_attempts.
@@ -361,7 +369,7 @@ def test_throttled_pin_attempt_does_not_count_toward_lockout(client, db, make_em
     assert victim.locked_until is None
 
 
-def test_pin_throttle_is_scoped_per_ip_not_global(client, make_employee, make_user):
+def test_pin_throttle_is_scoped_per_ip_not_global(client, make_employee, make_user, fixed_pin_window):
     # This test runs through an explicitly trusted reverse proxy. Arbitrary peers cannot
     # choose their rate-limit bucket by supplying X-Forwarded-For.
     attacker_employee = make_employee()
