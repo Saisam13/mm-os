@@ -1,4 +1,8 @@
-# MMOS 1.1.0 security and administration release
+# MMOS 1.1.1 security and administration release
+
+Version 1.1.1 aligns the administrator sign-in screen with the 1.1.0 server
+policy: platform administrators use Google. User access retains employee PIN
+sign-in. No additional database migration is required after schema 0010.
 
 This release extends the existing People, Accounts, Departments, Grants,
 Capabilities and Agents administration screens. It does not replace employee or
@@ -28,7 +32,7 @@ necessary.
 
 1. Preserve the current database, signing key, issuer, service keys and volume
    mappings. Back up and prove restoration before applying the new image.
-2. Test the exact image and configuration. Set `MMOS_VERSION=1.1.0`, the real HTTPS
+2. Test the exact image and configuration. Set `MMOS_VERSION=1.1.1`, the real HTTPS
    `MMOS_PUBLIC_URL`, Secure cookies and actual trusted proxy peers. Uvicorn no
    longer trusts forwarded headers from arbitrary clients.
 3. Apply `alembic upgrade head`: schema `0008 -> 0009 -> 0010`. Run

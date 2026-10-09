@@ -6,9 +6,8 @@ import type { PublicService } from '../api/types'
 import { ApiRequestError } from '../api/types'
 
 // One page: the logo lockup, the two sign-in methods, and the PIN / Google
-// flow. Restyled to the workspace design language — calm, light, petrol
-// accent — but the authentication behaviour is unchanged: the User / Admin
-// choice only steers the post-login redirect and the Google `next` param.
+// flow. Platform administrator sign-in uses Google; employee PIN access remains
+// available through User access. The server independently enforces this policy.
 export function EntryPage() {
   const { me, loading, refresh } = useAuth()
   const navigate = useNavigate()
@@ -103,9 +102,12 @@ export function EntryPage() {
               Continue with Google
             </a>
 
-            <div className="rule">or employee code</div>
-
-            <form onSubmit={submitPin}>
+            {loginType === 'admin' ? (
+              <p>Use Google to sign in as a platform administrator.</p>
+            ) : (
+            <>
+              <div className="rule">or employee code</div>
+              <form onSubmit={submitPin}>
               {formError ? <div className="form-err">{formError}</div> : null}
               <div className="f2">
                 <div>
@@ -120,7 +122,9 @@ export function EntryPage() {
               <button type="submit" className="btn-p" disabled={submitting}>
                 {submitting ? 'Signing in…' : 'Sign in'}
               </button>
-            </form>
+              </form>
+            </>
+            )}
           </div>
         )}
       </div>

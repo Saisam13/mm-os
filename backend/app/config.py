@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # service token. Empty = fall back to `issuer` (the original single-value behaviour).
     public_url: str = ""
     environment: str = "production"
-    version: str = "1.1.0"
+    version: str = "1.1.1"
 
     # ── database ──────────────────────────────────────────────────────────
     database_url: str = "postgresql+psycopg://mmos:mmos@localhost:5432/mmos"
