@@ -168,7 +168,7 @@ jobs:
           sed -i 's#^MMOS_DATABASE_URL=.*#MMOS_DATABASE_URL=postgresql+psycopg://mmos:ci_test_password@localhost:5432/mmos#' deploy/.env
           # Private ingress remains unchanged. Only the CI-local container probe is allowed.
           sed -i 's/^MMOS_ALLOWED_CIDRS=.*/MMOS_ALLOWED_CIDRS=127.0.0.1\/32/' deploy/.env
-          scripts/gen-signing-key.sh deploy/secrets/mmos_signing_key.pem
+          bash scripts/gen-signing-key.sh deploy/secrets/mmos_signing_key.pem
 
       - name: docker compose build (api image)
         run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml build api
