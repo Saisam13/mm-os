@@ -178,7 +178,7 @@ jobs:
           set -euo pipefail
           service_uid="$(docker compose --env-file deploy/.env -f deploy/docker-compose.yml run --rm --no-deps --entrypoint id api -u mmos)"
           sudo chown "$service_uid" deploy/secrets/mmos_signing_key.pem
-          chmod 600 deploy/secrets/mmos_signing_key.pem
+          sudo chmod 600 deploy/secrets/mmos_signing_key.pem
 
       - name: docker compose up and smoke-test /healthz + JWKS
         run: |
