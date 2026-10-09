@@ -125,7 +125,7 @@ jobs:
           MMOS_NETWORK_MODE: public
           MMOS_COOKIE_SECURE: "false"
           MMOS_COOKIE_DOMAIN: ""
-        run: pytest -q
+        run: python -m pytest -q
 
       - name: Shared SDK security contract
         working-directory: packages/mmos-client-py
@@ -222,5 +222,5 @@ jobs:
           PYEOF
 
       - name: docker compose down
-        if: always()
+        if: always() && hashFiles('deploy/.env') != ''
         run: docker compose --env-file deploy/.env -f deploy/docker-compose.yml down -v
