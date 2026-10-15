@@ -165,10 +165,12 @@ def test_service_token_carries_permissions(client, db, make_user, sign_in, make_
     assert "admin" in claims["permissions"]
 
 
-def test_committed_purchase_file_adds_editor_and_gives_no_default(
+def test_committed_purchase_file_adds_the_v2_levels_and_gives_no_default(
     client, db, make_user, make_employee, sign_in, make_service, make_grant
 ):
-    # Project Module guards every write with the `editor` role, which MM OS never had.
+    # Project Module v2 (Oct 2026): the analytics editor plus the purchase workflow's levels —
+    # member (L1), purchase team, approver (L2) and management (L3). Permissions are checked by
+    # key; this file mirrors the service's /_mmos/manifest (deploy/mmos/purchase.json there).
     service, roles = make_service(slug="purchase", roles=("viewer", "admin"))
     admin = make_user(is_platform_admin=True)
     sign_in(admin)
@@ -179,7 +181,7 @@ def test_committed_purchase_file_adds_editor_and_gives_no_default(
 
     r = client.post("/api/admin/services/purchase/roles/import?dry_run=false", json=committed("purchase"))
     assert r.status_code == 200, r.text
-    assert r.json()["roles_created"] == ["editor"]
+    assert r.json()["roles_created"] == ["member", "editor", "purchase", "approver", "management"]
     assert r.json()["roles_removed"] == []
 
     db.expire_all()
@@ -194,6 +196,11 @@ def test_committed_purchase_file_adds_editor_and_gives_no_default(
     assert role_of(other) is None
     after = {r["key"]: r for r in r.json()["service_after"]["roles"]}
     assert not any(role["is_default"] for role in after.values())
+    # The IT Admin role is Settings and oversight, not the purchase workflow itself.
+    assert "setup" in after["admin"]["permissions"]
+    assert "approve" not in after["admin"]["permissions"]
+    assert "purchase.process" not in after["admin"]["permissions"]
+    assert "approve" in after["approver"]["permissions"]
 
 
 def test_changing_a_roles_permissions_revokes_its_holders(client, db, make_user, sign_in, make_service, make_grant):

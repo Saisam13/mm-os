@@ -2,35 +2,109 @@
   "format": "mmos-roles/1",
   "service": "purchase",
   "permissions": {
-    "view": "See the dashboards, projects, POs, payments, vendors, timeline, anomalies and reports, and export them",
-    "edit": "Accept anomalies, set budgets, head owners, expected dates and PO aliases, save layouts and report templates",
-    "setup": "Settings: data sources, offline workbook uploads, email alerts (sender, recipients, test send)"
+    "view": "Analytics: see the dashboards, projects, POs, payments, vendors, anomalies and reports, and export them",
+    "edit": "Analytics: accept anomalies, set budgets, head owners, expected dates and PO aliases, save layouts and report templates",
+    "work.own": "Project Dashboard: create and own works, mark them started or completed, post weekly and emergency updates",
+    "work.ask": "Project Dashboard: ask a work owner for an update",
+    "work.oversee": "Project Dashboard: see every work's dates, costs and update text (management)",
+    "pr.raise": "Purchase: raise purchase requests and confirm receipt (GRN number, satisfied or not)",
+    "purchase.process": "Purchase: add vendor quotes, prepare POs, issue the PO PDF and raise payment requests",
+    "payment.record": "Purchase: mark an approved payment request as paid (date, split, UTR, payment advice)",
+    "approve": "Purchase: may be named an approver in Settings → Approvals (requests, POs, payments)",
+    "setup": "Settings: approvals, projects and numbering, email and templates, defaults, data sources, activity log"
   },
   "roles": [
     {
       "key": "viewer",
       "name": "Viewer",
-      "description": "Sees every dashboard and report and can export them. Changes nothing.",
-      "permissions": ["view"]
+      "description": "Analytics only: sees every dashboard and report and exports them. Changes nothing.",
+      "permissions": [
+        "view"
+      ]
+    },
+    {
+      "key": "member",
+      "name": "Member (L1)",
+      "description": "L1 — project managers and engineers: raise purchase requests, own works on the Project Dashboard, post weekly and emergency updates, confirm receipt of what they asked for.",
+      "permissions": [
+        "work.own",
+        "pr.raise"
+      ]
     },
     {
       "key": "editor",
       "name": "Editor",
-      "description": "Everything a viewer can do, plus accept anomalies, set budgets, owners, expected dates and PO aliases, and save layouts and report templates.",
-      "permissions": ["view", "edit"]
+      "description": "Analytics editor: everything a viewer can do, plus budgets, owners, expected dates, PO aliases, anomalies, saved layouts and report templates.",
+      "permissions": [
+        "view",
+        "edit"
+      ]
+    },
+    {
+      "key": "purchase",
+      "name": "Purchase team",
+      "description": "Purchase team: quotes, POs and the PO PDF, payment requests, recording payments; sees Analytics.",
+      "permissions": [
+        "view",
+        "work.own",
+        "pr.raise",
+        "purchase.process",
+        "payment.record"
+      ]
+    },
+    {
+      "key": "approver",
+      "name": "Approver (L2)",
+      "description": "L2 — may be named an approver in Settings → Approvals; asks for updates; analytics editor.",
+      "permissions": [
+        "view",
+        "edit",
+        "work.own",
+        "work.ask",
+        "pr.raise",
+        "approve"
+      ]
     },
     {
       "key": "admin",
       "name": "Administrator",
-      "description": "Everything an editor can do, plus Settings: data sources, workbook uploads and email alerts.",
-      "permissions": ["view", "edit", "setup"]
+      "description": "IT Admin: Settings (approvals, numbering, email, defaults, roles, activity log) and sight of everything — but not raising, pricing, approving or paying.",
+      "permissions": [
+        "view",
+        "edit",
+        "work.own",
+        "work.ask",
+        "work.oversee",
+        "setup"
+      ]
+    },
+    {
+      "key": "management",
+      "name": "Management (L3)",
+      "description": "L3 — sees every work with its dates, costs and updates; asks for updates; receives emergencies; may approve.",
+      "permissions": [
+        "view",
+        "edit",
+        "work.own",
+        "work.ask",
+        "work.oversee",
+        "pr.raise",
+        "approve"
+      ]
     }
   ],
   "remove_unlisted": false,
   "assign": {
     "mode": "missing",
     "rules": [
-      {"platform_admin": true, "role": "admin"}
+      {
+        "platform_admin": true,
+        "role": "admin"
+      },
+      {
+        "is_approver": true,
+        "role": "approver"
+      }
     ]
   }
 }
